@@ -1,15 +1,15 @@
 import typer
 from rich import print as rprint
 
-from smart_commit.commands.init import init_cmd
-from smart_commit.commands.propose import propose_cmd
-from smart_commit.commands.push import push_cmd
-from smart_commit.commands.integration import integration_app
-from smart_commit.commands.plugin import plugin_app
+from retgit.commands.init import init_cmd
+from retgit.commands.propose import propose_cmd
+from retgit.commands.push import push_cmd
+from retgit.commands.integration import integration_app
+from retgit.commands.plugin import plugin_app
 
 app = typer.Typer(
-    name="smart-commit",
-    help="🧠 AI-powered commit assistant with task management integration",
+    name="retgit",
+    help="🧠 AI-powered Git workflow assistant with task management integration",
     no_args_is_help=True,
     rich_markup_mode="rich"
 )

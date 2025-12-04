@@ -4,7 +4,7 @@ Security utilities for filtering sensitive files.
 This module provides functions to:
 1. Filter out sensitive files from AI prompts
 2. Prevent sensitive files from being committed
-3. Always exclude .smartcommit/ directory
+3. Always exclude .retgit/ directory
 """
 
 import os
@@ -15,9 +15,9 @@ from typing import List, Set
 # Files/patterns that should NEVER be sent to AI or committed
 # These are always excluded regardless of .gitignore
 ALWAYS_EXCLUDED = [
-    # Smart-commit internal
-    ".smartcommit/",
-    ".smartcommit/**",
+    # RetGit internal
+    ".retgit/",
+    ".retgit/**",
 
     # Environment and secrets
     ".env",
@@ -202,7 +202,7 @@ def get_exclusion_summary() -> str:
     """Get a human-readable summary of excluded patterns."""
     return """
 Excluded file patterns:
-- .smartcommit/ (configuration directory)
+- .retgit/ (configuration directory)
 - .env, .env.* (environment files)
 - *.pem, *.key (private keys)
 - credentials.*, secrets.* (credential files)

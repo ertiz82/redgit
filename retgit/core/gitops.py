@@ -93,7 +93,7 @@ class GitOps:
         had_stash = False
         try:
             if self.repo.is_dirty(untracked_files=True):
-                self.repo.git.stash("push", "--keep-index", "-m", "smart-commit temp")
+                self.repo.git.stash("push", "--keep-index", "-m", "retgit temp")
                 had_stash = True
             try:
                 self.repo.git.checkout("-b", branch_name)

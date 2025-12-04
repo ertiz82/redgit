@@ -1,5 +1,5 @@
 """
-Jira integration for smart-commit.
+Jira integration for retgit.
 
 Implements TaskManagementBase for Jira Cloud API v3.
 """
@@ -53,7 +53,7 @@ class JiraIntegration(TaskManagementBase):
         """
         Setup Jira connection.
 
-        Config example (.smartcommit/config.yaml):
+        Config example (.retgit/config.yaml):
             integrations:
               jira:
                 site: "https://your-domain.atlassian.net"

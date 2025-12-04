@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "retgit"
-version = "0.1.0"
+version = "0.1.2"
 description = "AI-powered Git workflow assistant with task management integration"
 readme = "README.md"
 license = "MIT"
@@ -43,9 +43,16 @@ Repository = "https://github.com/ertiz82/retgit.git"
 Issues = "https://github.com/ertiz82/retgit/issues"
 
 [project.scripts]
-retgit = "smart_commit.cli:main"
-rg = "smart_commit.cli:main"
+retgit = "retgit.cli:main"
+rg = "retgit.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["smart_commit*"]
+include = ["retgit*"]
+
+[tool.setuptools.package-data]
+retgit = [
+    "core/*.json",
+    "integrations/*.json",
+    "prompts/*.md"
+]

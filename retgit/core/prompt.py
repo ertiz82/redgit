@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from ..prompts import RESPONSE_SCHEMA
-from ..core.config import SMARTCOMMIT_DIR
+from ..core.config import RETGIT_DIR
 from ..plugins.registry import get_plugin_by_name, get_builtin_plugins
 
 # Builtin prompts directory (inside package)
@@ -108,7 +108,7 @@ class PromptManager:
             return self._fetch_url(name)
 
         # Check project prompts folder first
-        project_path = SMARTCOMMIT_DIR / "prompts" / f"{name}.md"
+        project_path = RETGIT_DIR / "prompts" / f"{name}.md"
         if project_path.exists():
             return project_path.read_text(encoding="utf-8")
 
@@ -204,7 +204,7 @@ class PromptManager:
                 prompts.append(f.stem)
 
         # Project prompts
-        project_prompts = SMARTCOMMIT_DIR / "prompts"
+        project_prompts = RETGIT_DIR / "prompts"
         if project_prompts.exists():
             for f in project_prompts.glob("*.md"):
                 if f.stem not in prompts:

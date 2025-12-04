@@ -102,7 +102,7 @@ def install_cmd(name: str):
 
     typer.echo("")
     typer.secho(f"✅ {schema.get('name', name)} integration installed.", fg=typer.colors.GREEN)
-    typer.echo(f"   Configuration saved to .smartcommit/config.yaml")
+    typer.echo(f"   Configuration saved to .retgit/config.yaml")
 
 
 def _prompt_field(field: dict):
@@ -176,14 +176,14 @@ def add_cmd(name: str):
 
     if name in config["integrations"] and config["integrations"][name].get("enabled"):
         typer.echo(f"   {name} is already enabled.")
-        typer.echo(f"   💡 Run 'smart-commit integration install {name}' to reconfigure")
+        typer.echo(f"   💡 Run 'retgit integration install {name}' to reconfigure")
         return
 
     config["integrations"][name] = {"enabled": True}
     ConfigManager().save(config)
 
     typer.secho(f"✅ {name} integration enabled.", fg=typer.colors.GREEN)
-    typer.echo(f"   ⚠️  Run 'smart-commit integration install {name}' to configure")
+    typer.echo(f"   ⚠️  Run 'retgit integration install {name}' to configure")
 
 
 @integration_app.command("remove")

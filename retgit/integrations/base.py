@@ -69,7 +69,7 @@ class TaskManagementBase(IntegrationBase):
     Base class for task management integrations.
 
     All task management integrations (Jira, Linear, Asana, etc.)
-    must implement these methods to work with smartcommit.
+    must implement these methods to work with retgit.
     """
 
     integration_type = IntegrationType.TASK_MANAGEMENT

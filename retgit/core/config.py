@@ -2,9 +2,9 @@ from pathlib import Path
 from typing import Optional
 import yaml
 
-SMARTCOMMIT_DIR = Path(".smartcommit")
-CONFIG_PATH = SMARTCOMMIT_DIR / "config.yaml"
-STATE_PATH = SMARTCOMMIT_DIR / "state.yaml"
+RETGIT_DIR = Path(".retgit")
+CONFIG_PATH = RETGIT_DIR / "config.yaml"
+STATE_PATH = RETGIT_DIR / "state.yaml"
 
 # Default workflow configuration
 DEFAULT_WORKFLOW = {
@@ -17,7 +17,7 @@ DEFAULT_WORKFLOW = {
 
 class ConfigManager:
     def __init__(self):
-        SMARTCOMMIT_DIR.mkdir(exist_ok=True)
+        RETGIT_DIR.mkdir(exist_ok=True)
 
     def load(self) -> dict:
         """Load configuration from config.yaml"""
@@ -64,10 +64,10 @@ class ConfigManager:
 
 
 class StateManager:
-    """Manages session state for smartcommit operations."""
+    """Manages session state for retgit operations."""
 
     def __init__(self):
-        SMARTCOMMIT_DIR.mkdir(exist_ok=True)
+        RETGIT_DIR.mkdir(exist_ok=True)
 
     def load(self) -> dict:
         """Load state from state.yaml"""

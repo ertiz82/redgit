@@ -17,7 +17,7 @@ class GithubIntegration:
         """
         Setup GitHub connection.
 
-        Config example (.smartcommit/config.yaml):
+        Config example (.retgit/config.yaml):
             integrations:
               github:
                 enabled: true

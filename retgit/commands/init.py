@@ -3,7 +3,7 @@ import subprocess
 import typer
 from pathlib import Path
 
-from ..core.config import ConfigManager, SMARTCOMMIT_DIR
+from ..core.config import ConfigManager, RETGIT_DIR
 from ..core.llm import load_providers, check_provider_available
 from ..plugins.registry import detect_project_type, get_builtin_plugins
 from ..integrations.registry import get_builtin_integrations
@@ -21,11 +21,11 @@ def get_builtin_prompts() -> list:
 
 
 def copy_prompts() -> int:
-    """Copy all builtin prompts to .smartcommit/prompts/"""
+    """Copy all builtin prompts to .retgit/prompts/"""
     if not BUILTIN_PROMPTS_DIR.exists():
         return 0
 
-    dest_dir = SMARTCOMMIT_DIR / "prompts"
+    dest_dir = RETGIT_DIR / "prompts"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     count = 0
@@ -197,10 +197,10 @@ def select_integrations() -> list:
 
 
 def init_cmd():
-    """Initialize smart-commit configuration for this project."""
+    """Initialize retgit configuration for this project."""
     config = {}
 
-    typer.echo("\n🧠 smart-commit v1.0 setup wizard\n")
+    typer.echo("\n🧠 retgit v1.0 setup wizard\n")
 
     # Project info
     config["project"] = {
@@ -233,8 +233,8 @@ def init_cmd():
     # Editor config
     config["editor"] = {"command": ["code", "--wait"]}
 
-    # Create .smartcommit directory
-    SMARTCOMMIT_DIR.mkdir(parents=True, exist_ok=True)
+    # Create .retgit directory
+    RETGIT_DIR.mkdir(parents=True, exist_ok=True)
 
     typer.echo("\n📁 Setting up:")
 
@@ -248,9 +248,9 @@ def init_cmd():
     typer.echo(f"   ✓ Config saved")
 
     typer.echo("")
-    typer.secho("✅ smart-commit v1.0 setup complete.", fg=typer.colors.GREEN)
-    typer.echo(f"   📄 Config: .smartcommit/config.yaml")
-    typer.echo(f"   📝 Prompts: .smartcommit/prompts/")
+    typer.secho("✅ retgit v1.0 setup complete.", fg=typer.colors.GREEN)
+    typer.echo(f"   📄 Config: .retgit/config.yaml")
+    typer.echo(f"   📝 Prompts: .retgit/prompts/")
     typer.echo(f"   🤖 LLM: {provider} ({model})")
 
     if selected_plugins:
@@ -268,11 +268,11 @@ def init_cmd():
                 pass  # Continue with other integrations
 
     typer.echo("\n💡 Usage:")
-    typer.echo("   smart-commit propose              # Auto-detect plugin prompt")
-    typer.echo("   smart-commit propose -p laravel   # Use Laravel plugin prompt")
-    typer.echo("   smart-commit propose -p minimal   # Use minimal prompt")
+    typer.echo("   retgit propose              # Auto-detect plugin prompt")
+    typer.echo("   retgit propose -p laravel   # Use Laravel plugin prompt")
+    typer.echo("   retgit propose -p minimal   # Use minimal prompt")
     typer.echo("")
     typer.echo("💡 Manage plugins/integrations:")
-    typer.echo("   smart-commit plugin list")
-    typer.echo("   smart-commit plugin add <name>")
-    typer.echo("   smart-commit integration install <name>")
+    typer.echo("   retgit plugin list")
+    typer.echo("   retgit plugin add <name>")
+    typer.echo("   retgit integration install <name>")

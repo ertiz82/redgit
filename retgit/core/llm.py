@@ -106,7 +106,7 @@ class LLMClient:
 
     Providers are loaded from llm_providers.json
 
-    Config example (.smartcommit/config.yaml):
+    Config example (.retgit/config.yaml):
         llm:
           provider: openai
           model: gpt-4o
