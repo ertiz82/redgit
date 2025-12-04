@@ -491,4 +491,14 @@ Contributions are welcome! Please read our contributing guidelines before submit
 
 ---
 
-**Made with love for developers who want smarter commits**
+<p align="center">
+  <img src="assets/red-kit.png" alt="Red Kit - RetGit Mascot" width="150"/>
+</p>
+
+<p align="center">
+  <em>"Gölgenden hızlı commit at, Red Kit!"</em>
+</p>
+
+<p align="center">
+  <strong>Made with love for developers who want smarter commits</strong>
+</p>
