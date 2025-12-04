@@ -44,7 +44,7 @@ pip install retgit
 
 # From source
 git clone https://github.com/ertiz82/retgit.git
-cd smart-commit
+cd retgit
 pip install -e .
 ```
 
