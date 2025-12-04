@@ -1,10 +1,10 @@
-# 🧠 SmartCommit
+# RetGit
 
 > **AI-powered Git workflow assistant with task management integration**
 
-SmartCommit analyzes your code changes, groups them logically, matches them with your active tasks (Jira, Linear, etc.), and creates well-structured commits automatically.
+RetGit analyzes your code changes, groups them logically, matches them with your active tasks (Jira, Linear, etc.), and creates well-structured commits automatically.
 
-## ✨ Features
+## Features
 
 - **AI-Powered Grouping**: Automatically groups related file changes
 - **Task Management Integration**: Matches changes with active Jira/Linear issues
@@ -16,7 +16,7 @@ SmartCommit analyzes your code changes, groups them logically, matches them with
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Requirements
 
@@ -24,21 +24,29 @@ SmartCommit analyzes your code changes, groups them logically, matches them with
 - Git
 - One of the supported LLM providers
 
-### Install SmartCommit
+### Install RetGit
 
 ```bash
-# From PyPI (when published)
-pip install smart-commit
+# From PyPI
+pip install retgit
 
 # From source
-git clone https://github.com/yourusername/smartcommit.git
-cd smartcommit
+git clone https://github.com/ertiz82/smart-commit.git
+cd smart-commit
 pip install -e .
+```
+
+After installation, you can use either `retgit` or the short alias `rg`:
+
+```bash
+retgit --help
+# or
+rg --help
 ```
 
 ### LLM Provider Setup
 
-SmartCommit supports multiple LLM providers. Choose one:
+RetGit supports multiple LLM providers. Choose one:
 
 #### Option 1: Claude Code (Recommended)
 ```bash
@@ -63,33 +71,33 @@ ollama pull qwen2.5-coder:7b
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # 1. Initialize in your project
 cd your-project
-sgc init
+rg init
 
 # 2. Make some changes to your code
 # ...
 
 # 3. Analyze and create commits
-sgc propose
+rg propose
 
 # 4. Push and complete issues
-sgc push
+rg push
 ```
 
 ---
 
-## 📖 Commands
+## Commands
 
-### `sgc init`
+### `rg init`
 
-Initialize SmartCommit in your project. Creates `.smartcommit/config.yaml`.
+Initialize RetGit in your project. Creates `.retgit/config.yaml`.
 
 ```bash
-sgc init
+rg init
 ```
 
 Interactive wizard will help you configure:
@@ -98,19 +106,19 @@ Interactive wizard will help you configure:
 - Plugins (Laravel, Vue, etc.)
 - Workflow settings
 
-### `sgc propose`
+### `rg propose`
 
 Analyze changes and create commits.
 
 ```bash
 # Basic usage
-sgc propose
+rg propose
 
 # With specific prompt/plugin
-sgc propose -p laravel
+rg propose -p laravel
 
 # Skip task management
-sgc propose --no-task
+rg propose --no-task
 ```
 
 **What it does:**
@@ -120,59 +128,59 @@ sgc propose --no-task
 4. Creates branches and commits for each group
 5. Transitions issues to "In Progress"
 
-### `sgc push`
+### `rg push`
 
 Push branches and complete issues.
 
 ```bash
 # Push current branch
-sgc push
+rg push
 
 # Push with specific issue
-sgc push -i PROJ-123
+rg push -i PROJ-123
 
 # Create pull request
-sgc push --pr
+rg push --pr
 
 # Don't complete issues
-sgc push --no-complete
+rg push --no-complete
 ```
 
-### `sgc integration`
+### `rg integration`
 
 Manage integrations.
 
 ```bash
 # List available integrations
-sgc integration list
+rg integration list
 
 # Install an integration
-sgc integration install jira
+rg integration install jira
 
 # Show integration status
-sgc integration status
+rg integration status
 ```
 
-### `sgc plugin`
+### `rg plugin`
 
 Manage plugins.
 
 ```bash
 # List available plugins
-sgc plugin list
+rg plugin list
 
 # Enable a plugin
-sgc plugin enable laravel
+rg plugin enable laravel
 
 # Disable a plugin
-sgc plugin disable laravel
+rg plugin disable laravel
 ```
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-Configuration is stored in `.smartcommit/config.yaml`:
+Configuration is stored in `.retgit/config.yaml`:
 
 ```yaml
 # Active integrations by type
@@ -215,7 +223,7 @@ integrations:
 
 ---
 
-## 🔌 Integrations
+## Integrations
 
 ### Task Management
 
@@ -225,7 +233,7 @@ Full Jira Cloud support with Scrum/Kanban boards.
 
 **Setup:**
 ```bash
-sgc integration install jira
+rg integration install jira
 ```
 
 **Required fields:**
@@ -261,7 +269,7 @@ GitHub integration for PR creation.
 
 **Setup:**
 ```bash
-sgc integration install github
+rg integration install github
 ```
 
 **Required fields:**
@@ -275,7 +283,7 @@ sgc integration install github
 
 ---
 
-## 🧩 Plugins
+## Plugins
 
 Plugins provide framework-specific prompts for better AI understanding.
 
@@ -291,7 +299,7 @@ Plugins provide framework-specific prompts for better AI understanding.
 ### Enable a Plugin
 
 ```bash
-sgc plugin enable laravel
+rg plugin enable laravel
 ```
 
 Or in config:
@@ -305,12 +313,12 @@ plugins:
 
 ```bash
 # Use plugin's prompt directly
-sgc propose -p laravel
+rg propose -p laravel
 ```
 
 ### Creating Custom Plugins
 
-Create `.smartcommit/plugins/my-plugin.py`:
+Create `.retgit/plugins/my-plugin.py`:
 
 ```python
 class MyPlugin:
@@ -331,16 +339,16 @@ class MyPlugin:
 
 ---
 
-## 🔒 Security
+## Security
 
-SmartCommit automatically excludes sensitive files from:
+RetGit automatically excludes sensitive files from:
 1. Being sent to AI
 2. Being committed
 
 ### Always Excluded
 
 ```
-.smartcommit/          # Config directory
+.retgit/              # Config directory
 .env, .env.*           # Environment files
 *.pem, *.key           # Private keys
 credentials.*, secrets.* # Credential files
@@ -360,7 +368,7 @@ application.properties
 
 ---
 
-## 🔄 Workflow Strategies
+## Workflow Strategies
 
 ### Local Merge (Default)
 
@@ -394,11 +402,11 @@ workflow:
 
 ---
 
-## 📝 Custom Prompts
+## Custom Prompts
 
-Create custom prompts in `.smartcommit/prompts/`:
+Create custom prompts in `.retgit/prompts/`:
 
-**`.smartcommit/prompts/my-prompt.md`:**
+**`.retgit/prompts/my-prompt.md`:**
 ```markdown
 # My Custom Prompt
 
@@ -415,12 +423,12 @@ Analyze the following file changes and group them logically.
 
 Use it:
 ```bash
-sgc propose -p my-prompt
+rg propose -p my-prompt
 ```
 
 ---
 
-## 🌍 Environment Variables
+## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
@@ -431,7 +439,7 @@ sgc propose -p my-prompt
 
 ---
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### "No changes found"
 Make sure you have uncommitted changes:
@@ -446,7 +454,7 @@ npm install -g @anthropic-ai/claude-code
 ```
 
 ### SSH Push Issues
-If `sgc push` hangs, ensure your SSH agent is running:
+If `rg push` hangs, ensure your SSH agent is running:
 ```bash
 eval "$(ssh-agent -s)"
 ssh-add ~/.ssh/id_rsa
@@ -459,16 +467,16 @@ ssh-add ~/.ssh/id_rsa
 
 ---
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please read our contributing guidelines before submitting PRs.
 
 ---
 
-**Made with ❤️ for developers who want smarter commits**
+**Made with love for developers who want smarter commits**
