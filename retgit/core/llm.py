@@ -202,27 +202,22 @@ class LLMClient:
 
     def _run_qwen_cli(self, prompt: str) -> List[Dict]:
         """Run Qwen Code CLI"""
-        with tempfile.NamedTemporaryFile(mode="w+", suffix=".txt", delete=False, encoding="utf-8") as f:
-            f.write(prompt)
-            f.flush()
-            try:
-                env = os.environ.copy()
-                env["NO_COLOR"] = "1"
+        env = os.environ.copy()
+        env["NO_COLOR"] = "1"
 
-                result = subprocess.run(
-                    ["qwen", "--non-interactive", "--prompt-file", f.name],
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    env=env
-                )
+        # Use -p/--prompt for non-interactive mode with prompt as argument
+        result = subprocess.run(
+            ["qwen", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=self.timeout,
+            env=env
+        )
 
-                if result.returncode != 0:
-                    raise RuntimeError(f"Qwen CLI error: {result.stderr or result.stdout}")
+        if result.returncode != 0:
+            raise RuntimeError(f"Qwen CLI error: {result.stderr or result.stdout}")
 
-                return self._parse_yaml(result.stdout)
-            finally:
-                Path(f.name).unlink(missing_ok=True)
+        return self._parse_yaml(result.stdout)
 
     def _run_api(self, prompt: str) -> List[Dict]:
         """Run API-based LLM"""
