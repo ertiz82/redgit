@@ -37,12 +37,12 @@ def push_cmd(
     config_manager = ConfigManager()
     state_manager = StateManager()
     config = config_manager.load()
-    workflow = config.get("workflow", {})
-    strategy = workflow.get("strategy", "local-merge")
 
     # Get session info
     session = state_manager.get_session()
     gitops = GitOps()
+    workflow = config.get("workflow", {})
+    strategy = workflow.get("strategy", "local-merge")
 
     # If no session, push current branch
     if not session or not session.get("branches"):
@@ -51,50 +51,67 @@ def push_cmd(
 
     branches = session.get("branches", [])
     issues = session.get("issues", [])
-    base_branch = session.get("base_branch", "main")
-
-    if not branches:
-        _push_current_branch(gitops, config, complete, create_pr, issue, tags)
-        return
-
-    console.print(f"[cyan]📦 Session: {len(branches)} branches, {len(issues)} issues[/cyan]")
-    console.print(f"[dim]Base branch: {base_branch}[/dim]")
-    console.print(f"[dim]Strategy: {strategy}[/dim]")
-    console.print("")
-
-    # Show branches
-    for b in branches:
-        issue_key = b.get("issue_key", "")
-        branch_name = b.get("branch", "")
-        if issue_key:
-            console.print(f"  • {branch_name} → {issue_key}")
-        else:
-            console.print(f"  • {branch_name}")
-
-    console.print("")
-
-    # Confirm
-    if not Confirm.ask("Push all branches?"):
-        return
-
-    # Initialize git
-    gitops = GitOps()
+    base_branch = session.get("base_branch", gitops.original_branch)
 
     # Get integrations
     task_mgmt = get_task_management(config)
     code_hosting = get_code_hosting(config)
 
-    # Process based on strategy
     if strategy == "merge-request":
+        # merge-request strategy: branches exist and need to be pushed
+        console.print(f"[cyan]📦 Session: {len(branches)} branches, {len(issues)} issues[/cyan]")
+        console.print("[dim]Branches will be pushed to remote for PR creation.[/dim]")
+        console.print("")
+
+        # Show branches
+        for b in branches:
+            issue_key = b.get("issue_key", "")
+            branch_name = b.get("branch", "")
+            if issue_key:
+                console.print(f"  • {branch_name} → {issue_key}")
+            else:
+                console.print(f"  • {branch_name}")
+
+        console.print("")
+
+        # Confirm
+        if not Confirm.ask("Push branches to remote?"):
+            return
+
+        # Push branches and optionally create PRs
         _push_merge_request_strategy(
             branches, gitops, task_mgmt, code_hosting,
             base_branch, create_pr, complete
         )
     else:
-        _push_local_merge_strategy(
-            branches, gitops, task_mgmt,
-            base_branch, complete
-        )
+        # local-merge strategy: branches are already merged during propose
+        # We just need to push current branch and complete issues
+        console.print(f"[cyan]📦 Session: {len(branches)} commits, {len(issues)} issues[/cyan]")
+        console.print("[dim]All commits are already merged to current branch.[/dim]")
+        console.print("")
+
+        # Show what was committed
+        for b in branches:
+            issue_key = b.get("issue_key", "")
+            branch_name = b.get("branch", "")
+            if issue_key:
+                console.print(f"  ✓ {branch_name} → {issue_key}")
+            else:
+                console.print(f"  ✓ {branch_name}")
+
+        console.print("")
+
+        # Confirm
+        if not Confirm.ask("Push to remote?"):
+            return
+
+        # Push current branch (all commits are already here)
+        _push_current_branch(gitops, config, complete=False, create_pr=create_pr, issue_key=issue, push_tags=tags)
+
+        # Complete issues from session
+        if complete and task_mgmt and task_mgmt.enabled and issues:
+            console.print("\n[bold cyan]Completing issues...[/bold cyan]")
+            _complete_issues(issues, task_mgmt)
 
     # Clear session
     if Confirm.ask("\nClear session?", default=True):
