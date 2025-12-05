@@ -203,12 +203,17 @@ def propose_cmd(
 
     # Summary
     session = state_manager.get_session()
+    strategy = workflow.get("strategy", "local-merge")
     if session:
         branches = session.get("branches", [])
         issues = session.get("issues", [])
         console.print(f"\n[bold green]✅ Created {len(branches)} commits for {len(issues)} issues[/bold green]")
-        console.print("[dim]All commits are merged to current branch.[/dim]")
-        console.print("[dim]Run 'rg push' to push to remote and complete issues[/dim]")
+        if strategy == "local-merge":
+            console.print("[dim]All commits are merged to current branch.[/dim]")
+            console.print("[dim]Run 'rg push' to push to remote and complete issues[/dim]")
+        else:
+            console.print("[dim]Branches ready for push and PR creation.[/dim]")
+            console.print("[dim]Run 'rg push --pr' to push branches and create pull requests[/dim]")
 
 
 def _show_active_issues(issues: List[Issue]):
@@ -260,6 +265,7 @@ def _process_matched_groups(
     """Process groups that matched with existing issues."""
 
     auto_transition = workflow.get("auto_transition", True)
+    strategy = workflow.get("strategy", "local-merge")
 
     for i, group in enumerate(groups, 1):
         issue_key = group["issue_key"]
@@ -278,10 +284,13 @@ def _process_matched_groups(
         # Create branch and commit using new method
         try:
             files = group.get("files", [])
-            success = gitops.create_branch_and_commit(branch_name, files, msg)
+            success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
 
             if success:
-                console.print(f"[green]   ✓ Committed and merged {branch_name}[/green]")
+                if strategy == "local-merge":
+                    console.print(f"[green]   ✓ Committed and merged {branch_name}[/green]")
+                else:
+                    console.print(f"[green]   ✓ Committed to {branch_name}[/green]")
 
                 # Add comment to issue
                 task_mgmt.on_commit(group, {"issue_key": issue_key})
@@ -291,7 +300,7 @@ def _process_matched_groups(
                     if task_mgmt.transition_issue(issue_key, "In Progress"):
                         console.print(f"[blue]   → Issue moved to In Progress[/blue]")
 
-                # Save to session (branch is merged but track the commit)
+                # Save to session
                 state_manager.add_session_branch(branch_name, issue_key)
             else:
                 console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
@@ -313,6 +322,7 @@ def _process_unmatched_groups(
     create_policy = workflow.get("create_missing_issues", "ask")
     default_type = workflow.get("default_issue_type", "task")
     auto_transition = workflow.get("auto_transition", True)
+    strategy = workflow.get("strategy", "local-merge")
 
     for i, group in enumerate(groups, 1):
         title = group.get("commit_title", "Untitled")
@@ -372,16 +382,19 @@ def _process_unmatched_groups(
         # Create branch and commit using new method
         try:
             files = group.get("files", [])
-            success = gitops.create_branch_and_commit(branch_name, files, msg)
+            success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
 
             if success:
-                console.print(f"[green]   ✓ Committed and merged {branch_name}[/green]")
+                if strategy == "local-merge":
+                    console.print(f"[green]   ✓ Committed and merged {branch_name}[/green]")
+                else:
+                    console.print(f"[green]   ✓ Committed to {branch_name}[/green]")
 
                 # Add comment if issue was created
                 if issue_key and task_mgmt:
                     task_mgmt.on_commit(group, {"issue_key": issue_key})
 
-                # Save to session (branch is merged but track the commit)
+                # Save to session
                 state_manager.add_session_branch(branch_name, issue_key)
             else:
                 console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
