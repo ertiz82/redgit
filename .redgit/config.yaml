@@ -1,0 +1,27 @@
+project:
+  name: RedGit
+llm:
+  provider: qwen-code
+  model: qwen-coder
+  prompt: auto
+  max_files: 100
+  include_content: false
+  timeout: 120
+plugins:
+  enabled:
+  - laravel
+  - version
+  - changelog
+  version:
+    current: 0.2.2
+    enabled: true
+integrations: {}
+editor:
+  command:
+  - code
+  - --wait
+workflow:
+  strategy: local-merge
+  auto_transition: true
+  create_missing_issues: ask
+  default_issue_type: task
