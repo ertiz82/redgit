@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "retgit"
-version = "0.1.9"
+name = "redgit"
+version = "0.2.1"
 description = "AI-powered Git workflow assistant with task management integration"
 readme = "README.md"
 license = "MIT"
@@ -37,21 +37,21 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ertiz82/retgit"
-Documentation = "https://github.com/ertiz82/retgit#readme"
-Repository = "https://github.com/ertiz82/retgit.git"
-Issues = "https://github.com/ertiz82/retgit/issues"
+Homepage = "https://github.com/ertiz82/redgit"
+Documentation = "https://github.com/ertiz82/redgit#readme"
+Repository = "https://github.com/ertiz82/redgit.git"
+Issues = "https://github.com/ertiz82/redgit/issues"
 
 [project.scripts]
-retgit = "retgit.cli:main"
-rg = "retgit.cli:main"
+redgit = "redgit.cli:main"
+rg = "redgit.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["retgit*"]
+include = ["redgit*"]
 
 [tool.setuptools.package-data]
-retgit = [
+redgit = [
     "core/*.json",
     "integrations/*.json",
     "prompts/*.md"
