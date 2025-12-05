@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="RetGit Logo" width="400"/>
+  <img src="assets/logo.svg" alt="RedGit Logo" width="400"/>
 </p>
 
 <p align="center">
@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/retgit/"><img src="https://img.shields.io/pypi/v/retgit.svg" alt="PyPI version"></a>
-  <a href="https://pypi.org/project/retgit/"><img src="https://img.shields.io/pypi/pyversions/retgit.svg" alt="Python versions"></a>
-  <a href="https://github.com/ertiz82/retgit/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://pypi.org/project/redgit/"><img src="https://img.shields.io/pypi/v/redgit.svg" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/redgit/"><img src="https://img.shields.io/pypi/pyversions/redgit.svg" alt="Python versions"></a>
+  <a href="https://github.com/ertiz82/redgit/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
 
 ---
 
-RetGit analyzes your code changes, groups them logically, matches them with your active tasks (Jira, Linear, etc.), and creates well-structured commits automatically.
+RedGit analyzes your code changes, groups them logically, matches them with your active tasks (Jira, Linear, etc.), and creates well-structured commits automatically.
 
 ## Features
 
@@ -36,29 +36,29 @@ RetGit analyzes your code changes, groups them logically, matches them with your
 - Git
 - One of the supported LLM providers
 
-### Install RetGit
+### Install RedGit
 
 ```bash
 # From PyPI
-pip install retgit
+pip install redgit
 
 # From source
-git clone https://github.com/ertiz82/retgit.git
-cd retgit
+git clone https://github.com/ertiz82/redgit.git
+cd redgit
 pip install -e .
 ```
 
-After installation, you can use either `retgit` or the short alias `rg`:
+After installation, you can use either `redgit` or the short alias `rg`:
 
 ```bash
-retgit --help
+redgit --help
 # or
 rg --help
 ```
 
 ### LLM Provider Setup
 
-RetGit supports multiple LLM providers. Choose one:
+RedGit supports multiple LLM providers. Choose one:
 
 #### Option 1: Claude Code (Recommended)
 ```bash
@@ -106,7 +106,7 @@ rg push
 
 ### `rg init`
 
-Initialize RetGit in your project. Creates `.retgit/config.yaml`.
+Initialize RedGit in your project. Creates `.redgit/config.yaml`.
 
 ```bash
 rg init
@@ -192,7 +192,7 @@ rg plugin disable laravel
 
 ## Configuration
 
-Configuration is stored in `.retgit/config.yaml`:
+Configuration is stored in `.redgit/config.yaml`:
 
 ```yaml
 # Active integrations by type
@@ -330,7 +330,7 @@ rg propose -p laravel
 
 ### Creating Custom Plugins
 
-Create `.retgit/plugins/my-plugin.py`:
+Create `.redgit/plugins/my-plugin.py`:
 
 ```python
 class MyPlugin:
@@ -353,14 +353,14 @@ class MyPlugin:
 
 ## Security
 
-RetGit automatically excludes sensitive files from:
+RedGit automatically excludes sensitive files from:
 1. Being sent to AI
 2. Being committed
 
 ### Always Excluded
 
 ```
-.retgit/              # Config directory
+.redgit/              # Config directory
 .env, .env.*           # Environment files
 *.pem, *.key           # Private keys
 credentials.*, secrets.* # Credential files
@@ -416,9 +416,9 @@ workflow:
 
 ## Custom Prompts
 
-Create custom prompts in `.retgit/prompts/`:
+Create custom prompts in `.redgit/prompts/`:
 
-**`.retgit/prompts/my-prompt.md`:**
+**`.redgit/prompts/my-prompt.md`:**
 ```markdown
 # My Custom Prompt
 
@@ -492,11 +492,11 @@ Contributions are welcome! Please read our contributing guidelines before submit
 ---
 
 <p align="center">
-  <img src="assets/red-kit.png" alt="Red Kit - RetGit Mascot" width="150"/>
+  <img src="assets/red-kit.png" alt="Red Kit - RedGit Mascot" width="150"/>
 </p>
 
 <p align="center">
-  <em>"Gölgenden hızlı commit at, Red Kit!"</em>
+  <em>"Gölgenden hızlı commit at, Red Git!"</em>
 </p>
 
 <p align="center">
