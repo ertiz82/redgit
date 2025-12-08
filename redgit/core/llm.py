@@ -173,6 +173,91 @@ class LLMClient:
         else:
             raise ValueError(f"Unknown provider type: {provider_type}")
 
+    def chat(self, prompt: str) -> str:
+        """Send prompt to LLM and get raw text response"""
+        provider_type = self.provider_config.get("type")
+
+        if provider_type == "cli":
+            return self._chat_cli(prompt)
+        elif provider_type == "api":
+            return self._chat_api(prompt)
+        else:
+            raise ValueError(f"Unknown provider type: {provider_type}")
+
+    def _chat_cli(self, prompt: str) -> str:
+        """Run CLI-based LLM for chat"""
+        env = os.environ.copy()
+        env["NO_COLOR"] = "1"
+
+        if self.provider_name == "claude-code":
+            cmd = ["claude", "-p", prompt]
+        elif self.provider_name == "qwen-code":
+            cmd = ["qwen", prompt]
+        else:
+            raise ValueError(f"Unknown CLI provider: {self.provider_name}")
+
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        if result.returncode != 0:
+            raise RuntimeError(f"LLM CLI error: {result.stderr}")
+
+        return result.stdout.strip()
+
+    def _chat_api(self, prompt: str) -> str:
+        """Run API-based LLM for chat"""
+        if self.provider_name == "openai":
+            return self._chat_openai(prompt)
+        elif self.provider_name == "anthropic":
+            return self._chat_anthropic(prompt)
+        elif self.provider_name == "ollama":
+            return self._chat_ollama(prompt)
+        elif self.provider_name == "openrouter":
+            return self._chat_openrouter(prompt)
+        else:
+            raise ValueError(f"Unknown API provider: {self.provider_name}")
+
+    def _chat_openai(self, prompt: str) -> str:
+        """Chat with OpenAI API"""
+        from openai import OpenAI
+        client = OpenAI()
+        response = client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
+        )
+        return response.choices[0].message.content
+
+    def _chat_anthropic(self, prompt: str) -> str:
+        """Chat with Anthropic API"""
+        import anthropic
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text
+
+    def _chat_ollama(self, prompt: str) -> str:
+        """Chat with Ollama API"""
+        import requests
+        base_url = self.provider_config.get("base_url", "http://localhost:11434")
+        response = requests.post(
+            f"{base_url}/api/generate",
+            json={"model": self.model, "prompt": prompt, "stream": False}
+        )
+        return response.json().get("response", "")
+
+    def _chat_openrouter(self, prompt: str) -> str:
+        """Chat with OpenRouter API"""
+        import requests
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": self.model, "messages": [{"role": "user", "content": prompt}]}
+        )
+        return response.json()["choices"][0]["message"]["content"]
+
     def _run_cli(self, prompt: str) -> List[Dict]:
         """Run CLI-based LLM"""
         if self.provider_name == "claude-code":

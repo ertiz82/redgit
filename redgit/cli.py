@@ -10,8 +10,6 @@ from redgit.commands.propose import propose_cmd
 from redgit.commands.push import push_cmd
 from redgit.commands.integration import integration_app
 from redgit.commands.plugin import plugin_app
-from redgit.plugins.version.commands import version_app, release_shortcut
-from redgit.plugins.changelog.commands import changelog_app
 
 
 def version_callback(value: bool):
@@ -47,15 +45,51 @@ app.command("push")(push_cmd)
 app.add_typer(integration_app, name="integration")
 app.add_typer(plugin_app, name="plugin")
 
-# Version and Changelog plugins
-app.add_typer(version_app, name="version")
-app.add_typer(changelog_app, name="changelog")
 
-# Shortcut: rg release = rg version release
-app.command("release")(release_shortcut)
+def _load_plugin_commands():
+    """Dynamically load commands from enabled plugins."""
+    try:
+        from redgit.core.config import ConfigManager
+        from redgit.plugins.registry import get_enabled_plugin_commands, get_all_plugin_shortcuts
+
+        config = ConfigManager().load()
+
+        # Load plugin typer apps (e.g., version_app, changelog_app)
+        commands = get_enabled_plugin_commands(config)
+        for name, cmd_app in commands.items():
+            app.add_typer(cmd_app, name=name)
+
+        # Load plugin shortcuts (e.g., release_shortcut -> rg release)
+        shortcuts = get_all_plugin_shortcuts(config)
+        for name, cmd_func in shortcuts.items():
+            app.command(name)(cmd_func)
+
+    except Exception:
+        # Silently fail if config not found (e.g., before init)
+        pass
+
+
+def _load_integration_commands():
+    """Dynamically load commands from active integrations."""
+    try:
+        from redgit.core.config import ConfigManager
+        from redgit.integrations.registry import get_active_integration_commands
+
+        config = ConfigManager().load()
+        commands = get_active_integration_commands(config)
+
+        for name, cmd_app in commands.items():
+            app.add_typer(cmd_app, name=name)
+    except Exception:
+        # Silently fail if config not found (e.g., before init)
+        pass
 
 
 def main():
+    # Load plugin and integration commands dynamically
+    _load_plugin_commands()
+    _load_integration_commands()
+
     # Show splash animation on first run (skip with --no-anim, --help, --version)
     skip_flags = ["--no-anim", "--help", "-h", "--version", "-v"]
     if not any(flag in sys.argv for flag in skip_flags):
