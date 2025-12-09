@@ -134,12 +134,19 @@ def propose_cmd(
 
     # Create prompt with active issues context
     prompt_manager = PromptManager(config.get("llm", {}))
+
+    # Get issue_language from Jira config if available
+    issue_language = None
+    if task_mgmt and hasattr(task_mgmt, 'issue_language'):
+        issue_language = task_mgmt.issue_language
+
     try:
         final_prompt = prompt_manager.get_prompt(
             changes=changes,
             prompt_name=prompt,
             plugin_prompt=plugin_prompt,
-            active_issues=active_issues
+            active_issues=active_issues,
+            issue_language=issue_language
         )
     except FileNotFoundError as e:
         console.print(f"[red]❌ Prompt not found: {e}[/red]")
@@ -341,8 +348,9 @@ def _process_unmatched_groups(
             # else: skip
 
             if should_create:
-                # Get issue details
-                summary = Prompt.ask("   Issue title", default=title[:100])
+                # Get issue details - prefer issue_title (localized) if available
+                default_summary = group.get("issue_title") or title[:100]
+                summary = Prompt.ask("   Issue title", default=default_summary)
                 description = group.get("commit_body", "")
 
                 # Create issue
@@ -357,7 +365,8 @@ def _process_unmatched_groups(
 
                     # Transition to In Progress
                     if auto_transition:
-                        task_mgmt.transition_issue(issue_key, "In Progress")
+                        if task_mgmt.transition_issue(issue_key, "In Progress"):
+                            console.print(f"[green]   ✓ {issue_key} → In Progress[/green]")
                 else:
                     console.print("[red]   ❌ Failed to create issue[/red]")
 
