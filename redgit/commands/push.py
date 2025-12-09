@@ -234,10 +234,11 @@ def _push_local_merge_strategy(
 
 
 def _complete_issues(issues: List[str], task_mgmt):
-    """Mark issues as Done."""
+    """Mark issues as Done using status_map from config."""
     for issue_key in issues:
         try:
-            if task_mgmt.transition_issue(issue_key, "Done"):
+            # Use "done" status - will try all mapped statuses from config
+            if task_mgmt.transition_issue(issue_key, "done"):
                 console.print(f"[green]  ✓ {issue_key} → Done[/green]")
             else:
                 console.print(f"[yellow]  ⚠️  {issue_key} could not be transitioned[/yellow]")
@@ -332,11 +333,8 @@ def _push_current_branch(
 
     # Complete issue
     if complete and issue_key and task_mgmt and task_mgmt.enabled:
-        if Confirm.ask(f"Mark {issue_key} as Done?", default=True):
-            if task_mgmt.transition_issue(issue_key, "Done"):
-                console.print(f"[green]✓ {issue_key} → Done[/green]")
-            else:
-                console.print(f"[yellow]⚠️  Could not transition {issue_key}[/yellow]")
+        if Confirm.ask(f"Mark {issue_key} as completed?", default=True):
+            _complete_issues([issue_key], task_mgmt)
 
     console.print("\n[bold green]✅ Push complete![/bold green]")
 
