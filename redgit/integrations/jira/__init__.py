@@ -153,14 +153,17 @@ class JiraIntegration(TaskManagementBase):
         except Exception:
             pass
 
-        # Also get issues from active sprint if using scrum
+        # Also get issues from active sprint if using scrum (only mine)
         if self.board_type == "scrum" and self.board_id:
             sprint_issues = self.get_sprint_issues()
-            # Merge without duplicates
+            # Merge without duplicates - only issues assigned to current user
             existing_keys = {i.key for i in issues}
+            my_email = self.email.lower() if self.email else ""
             for si in sprint_issues:
                 if si.key not in existing_keys:
-                    issues.append(si)
+                    # Only add if assigned to me (check by email or displayName match)
+                    if si.assignee and my_email and my_email in si.assignee.lower():
+                        issues.append(si)
 
         return issues
 
