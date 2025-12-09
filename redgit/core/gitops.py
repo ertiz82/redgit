@@ -182,9 +182,22 @@ class GitOps:
         """
         base_branch = self.original_branch
 
-        # Filter out excluded files
-        safe_files = [f for f in files if not is_excluded(f) and Path(f).exists()]
-        if not safe_files:
+        # Filter out excluded files (but keep deleted files)
+        # Get current changes to check for deleted files
+        current_changes = {c["file"]: c["status"] for c in self.get_changes()}
+
+        safe_files = []
+        deleted_files = []
+        for f in files:
+            if is_excluded(f):
+                continue
+            # Check if file is deleted (either in git status or doesn't exist)
+            if current_changes.get(f) == "D" or (f in current_changes and not Path(f).exists()):
+                deleted_files.append(f)
+            elif Path(f).exists():
+                safe_files.append(f)
+
+        if not safe_files and not deleted_files:
             return False
 
         actual_branch_name = branch_name
@@ -229,6 +242,17 @@ class GitOps:
                     self.repo.index.add([f])
                 except Exception:
                     pass
+
+            # 5b. Stage deleted files (git rm)
+            for f in deleted_files:
+                try:
+                    self.repo.index.remove([f], working_tree=False)
+                except Exception:
+                    # Try git rm directly
+                    try:
+                        self.repo.git.rm("--cached", f)
+                    except Exception:
+                        pass
 
             # 6. Commit
             self.repo.index.commit(message)
