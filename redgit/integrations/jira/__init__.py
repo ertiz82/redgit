@@ -137,6 +137,122 @@ class JiraIntegration(TaskManagementBase):
             pass
         return None
 
+    @staticmethod
+    def after_install(config_values: dict) -> dict:
+        """
+        Hook called after Jira integration install.
+        Auto-detects story_points_field from Jira API.
+
+        Args:
+            config_values: Dict of collected config values
+
+        Returns:
+            Updated config_values with auto-detected fields
+        """
+        import typer
+
+        site = config_values.get("site", "").rstrip("/")
+        email = config_values.get("email", "")
+        token = config_values.get("token")
+
+        if not all([site, email, token]):
+            return config_values
+
+        typer.echo("\n   🔍 Auto-detecting Jira fields...")
+
+        # Detect story points field
+        story_points_field = JiraIntegration.detect_story_points_field(site, email, token)
+        if story_points_field:
+            config_values["story_points_field"] = story_points_field
+            typer.secho(f"   ✓ Story points field: {story_points_field}", fg=typer.colors.GREEN)
+        else:
+            typer.echo("   ⚠️  Story points field not found (using default: customfield_10016)")
+
+        return config_values
+
+    @staticmethod
+    def detect_story_points_field(site: str, email: str, token: str) -> Optional[str]:
+        """
+        Auto-detect story points custom field from Jira.
+
+        Args:
+            site: Jira site URL (e.g., https://company.atlassian.net)
+            email: Jira account email
+            token: Jira API token
+
+        Returns:
+            Custom field ID (e.g., "customfield_10016") or None if not found
+        """
+        try:
+            import requests
+            session = requests.Session()
+            session.auth = (email, token)
+            session.headers.update({"Accept": "application/json"})
+
+            url = f"{site.rstrip('/')}/rest/api/3/field"
+            response = session.get(url)
+            response.raise_for_status()
+
+            fields = response.json()
+
+            # Common story points field names (case-insensitive search)
+            story_point_keywords = [
+                "story point",
+                "story_point",
+                "storypoint",
+                "story-point",
+                "sp",
+                "points",
+                "estimation",
+                "estimate"
+            ]
+
+            # First pass: exact matches for common names
+            for field in fields:
+                field_name = (field.get("name") or "").lower()
+                field_id = field.get("id", "")
+
+                # Skip non-custom fields
+                if not field_id.startswith("customfield_"):
+                    continue
+
+                # Check for story points
+                if "story point" in field_name or field_name == "story points":
+                    return field_id
+
+            # Second pass: keyword matching
+            for field in fields:
+                field_name = (field.get("name") or "").lower()
+                field_id = field.get("id", "")
+
+                if not field_id.startswith("customfield_"):
+                    continue
+
+                for keyword in story_point_keywords:
+                    if keyword in field_name:
+                        return field_id
+
+            # Third pass: check schema for number type fields that might be story points
+            for field in fields:
+                field_id = field.get("id", "")
+                schema = field.get("schema", {})
+
+                if not field_id.startswith("customfield_"):
+                    continue
+
+                # Story points are typically number fields
+                if schema.get("type") == "number":
+                    field_name = (field.get("name") or "").lower()
+                    # Avoid time tracking fields
+                    if "time" not in field_name and "hour" not in field_name:
+                        if "point" in field_name or "estimate" in field_name:
+                            return field_id
+
+        except Exception:
+            pass
+
+        return None
+
     # ==================== TaskManagementBase Implementation ====================
 
     def get_my_active_issues(self) -> List[Issue]:

@@ -64,6 +64,30 @@ class IntegrationBase(ABC):
         """Hook called after each commit (optional)"""
         pass
 
+    @staticmethod
+    def after_install(config_values: dict) -> dict:
+        """
+        Hook called after integration install, before saving config.
+
+        Override this to auto-detect fields, validate settings, etc.
+
+        Args:
+            config_values: Dict of collected config values from user input
+
+        Returns:
+            Updated config_values dict (can add/modify fields)
+
+        Example:
+            @staticmethod
+            def after_install(config_values: dict) -> dict:
+                # Auto-detect some field
+                detected_value = detect_something(config_values)
+                if detected_value:
+                    config_values["some_field"] = detected_value
+                return config_values
+        """
+        return config_values
+
 
 class TaskManagementBase(IntegrationBase):
     """
