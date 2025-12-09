@@ -397,21 +397,33 @@ class LLMClient:
         return self._parse_yaml(response.choices[0].message.content)
 
     def _parse_yaml(self, output: str) -> List[Dict]:
-        """Parse YAML block from LLM output"""
-        # Find ```yaml ... ``` block
-        start = output.find("```yaml")
-        if start == -1:
-            start = output.find("```yml")
+        """Parse YAML or JSON block from LLM output"""
+        import json
 
-        if start != -1:
-            end = output.find("```", start + 7)
-            yaml_text = output[start + 7:end].strip() if end != -1 else output[start + 7:].strip()
-        else:
+        # Find code block - check for yaml, yml, or json
+        yaml_text = None
+        for marker in ["```yaml", "```yml", "```json"]:
+            start = output.find(marker)
+            if start != -1:
+                marker_len = len(marker)
+                end = output.find("```", start + marker_len)
+                yaml_text = output[start + marker_len:end].strip() if end != -1 else output[start + marker_len:].strip()
+                break
+
+        if yaml_text is None:
             # Try parsing entire output as YAML
             yaml_text = output.strip()
 
         try:
-            data = yaml.safe_load(yaml_text)
+            # Try JSON first (handles both JSON and YAML for simple cases)
+            try:
+                data = json.loads(yaml_text)
+            except json.JSONDecodeError:
+                data = yaml.safe_load(yaml_text)
+
+            # Handle both list and dict responses
+            if isinstance(data, list):
+                return data
             if isinstance(data, dict):
                 return data.get("groups", [])
             return []
