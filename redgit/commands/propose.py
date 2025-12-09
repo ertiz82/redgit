@@ -29,6 +29,10 @@ def propose_cmd(
     no_task: bool = typer.Option(
         False, "--no-task",
         help="Skip task management integration"
+    ),
+    task: Optional[str] = typer.Option(
+        None, "--task", "-t",
+        help="Link all changes to a specific task/issue number (e.g., 123 or PROJ-123)"
     )
 ):
     """Analyze changes and propose commit groups with task matching."""
@@ -89,6 +93,11 @@ def propose_cmd(
         console.print("")
 
     console.print(f"[cyan]📁 {len(changes)} file changes found.[/cyan]")
+
+    # Handle --task flag: commit all changes to a specific task
+    if task:
+        _process_task_commit(task, changes, gitops, task_mgmt, state_manager, config)
+        return
 
     # Show active plugin
     if active_plugin:
@@ -410,3 +419,123 @@ def _process_unmatched_groups(
 
         except Exception as e:
             console.print(f"[red]   ❌ Error: {e}[/red]")
+
+
+def _process_task_commit(
+    task_id: str,
+    changes: List[str],
+    gitops: GitOps,
+    task_mgmt: Optional[TaskManagementBase],
+    state_manager: StateManager,
+    config: dict
+):
+    """
+    Process all changes as a single commit linked to a specific task.
+
+    This is triggered when --task flag is used:
+    rg propose --task 123
+    rg propose --task PROJ-123
+    """
+    workflow = config.get("workflow", {})
+    strategy = workflow.get("strategy", "local-merge")
+    auto_transition = workflow.get("auto_transition", True)
+
+    # Resolve issue key
+    issue_key = task_id
+    issue = None
+
+    if task_mgmt and task_mgmt.enabled:
+        console.print(f"[blue]📋 Task management: {task_mgmt.name}[/blue]")
+
+        # If task_id is just a number, prepend project key
+        if task_id.isdigit() and hasattr(task_mgmt, 'project_key') and task_mgmt.project_key:
+            issue_key = f"{task_mgmt.project_key}-{task_id}"
+
+        # Fetch issue details
+        with console.status(f"Fetching issue {issue_key}..."):
+            issue = task_mgmt.get_issue(issue_key)
+
+        if not issue:
+            console.print(f"[red]❌ Issue {issue_key} not found[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[green]✓ Found: {issue_key} - {issue.summary}[/green]")
+        console.print(f"[dim]   Status: {issue.status}[/dim]")
+    else:
+        console.print(f"[yellow]⚠️  No task management configured, using {issue_key} as reference[/yellow]")
+
+    # Show changes summary
+    console.print(f"\n[cyan]📁 {len(changes)} files will be committed:[/cyan]")
+    for f in changes[:10]:
+        console.print(f"[dim]   • {f}[/dim]")
+    if len(changes) > 10:
+        console.print(f"[dim]   ... and {len(changes) - 10} more[/dim]")
+
+    # Generate commit message
+    if issue:
+        commit_title = f"{issue_key}: {issue.summary}"
+        commit_body = issue.description[:500] if issue.description else ""
+    else:
+        commit_title = f"Changes for {issue_key}"
+        commit_body = ""
+
+    # Format branch name
+    if task_mgmt and hasattr(task_mgmt, 'format_branch_name'):
+        branch_name = task_mgmt.format_branch_name(issue_key, issue.summary if issue else task_id)
+    else:
+        branch_name = f"feature/{issue_key.lower()}"
+
+    console.print(f"\n[cyan]📝 Commit:[/cyan]")
+    console.print(f"   Title: {commit_title[:60]}{'...' if len(commit_title) > 60 else ''}")
+    console.print(f"   Branch: {branch_name}")
+    console.print(f"   Files: {len(changes)}")
+
+    # Confirm
+    if not Confirm.ask("\nProceed?", default=True):
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+
+    # Build full commit message
+    msg = f"{commit_title}\n\n{commit_body}".strip()
+    msg += f"\n\nRefs: {issue_key}"
+
+    # Save base branch for session
+    state_manager.set_base_branch(gitops.original_branch)
+
+    # Create branch and commit
+    try:
+        success = gitops.create_branch_and_commit(branch_name, changes, msg, strategy=strategy)
+
+        if success:
+            if strategy == "local-merge":
+                console.print(f"[green]✓ Committed and merged {branch_name}[/green]")
+            else:
+                console.print(f"[green]✓ Committed to {branch_name}[/green]")
+
+            # Add comment to issue
+            if task_mgmt and issue:
+                group = {
+                    "commit_title": commit_title,
+                    "branch": branch_name,
+                    "files": changes
+                }
+                task_mgmt.on_commit(group, {"issue_key": issue_key})
+                console.print(f"[blue]✓ Comment added to {issue_key}[/blue]")
+
+            # Transition to In Progress if configured
+            if task_mgmt and issue and auto_transition:
+                if issue.status.lower() not in ["in progress", "in development"]:
+                    if task_mgmt.transition_issue(issue_key, "In Progress"):
+                        console.print(f"[blue]→ {issue_key} moved to In Progress[/blue]")
+
+            # Save to session
+            state_manager.add_session_branch(branch_name, issue_key)
+
+            console.print(f"\n[bold green]✅ All changes committed to {issue_key}[/bold green]")
+            console.print("[dim]Run 'rg push' to push to remote[/dim]")
+        else:
+            console.print("[yellow]⚠️  No files to commit[/yellow]")
+
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/red]")
+        raise typer.Exit(1)
