@@ -10,6 +10,8 @@ from redgit.commands.propose import propose_cmd
 from redgit.commands.push import push_cmd
 from redgit.commands.integration import integration_app
 from redgit.commands.plugin import plugin_app
+from redgit.commands.tap import tap_app, install_cmd as tap_install_cmd, uninstall_cmd as tap_uninstall_cmd
+from redgit.commands.notify import notify_app
 
 
 def version_callback(value: bool):
@@ -42,8 +44,12 @@ def main_callback(
 app.command("init")(init_cmd)
 app.command("propose")(propose_cmd)
 app.command("push")(push_cmd)
+app.command("install")(tap_install_cmd)
+app.command("uninstall")(tap_uninstall_cmd)
 app.add_typer(integration_app, name="integration")
 app.add_typer(plugin_app, name="plugin")
+app.add_typer(tap_app, name="tap")
+app.add_typer(notify_app, name="notify")
 
 
 def _load_plugin_commands():

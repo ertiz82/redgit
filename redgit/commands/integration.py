@@ -8,22 +8,12 @@ from ..integrations.registry import (
     get_all_integrations,
     get_integration_class,
     get_integration_type,
+    get_install_schema,
+    get_all_install_schemas,
     IntegrationType
 )
 
 integration_app = typer.Typer(help="Integration management")
-
-# Load install schemas
-SCHEMAS_FILE = Path(__file__).parent.parent / "integrations" / "install_schemas.json"
-
-
-def load_install_schemas() -> dict:
-    """Load integration install schemas"""
-    if SCHEMAS_FILE.exists():
-        with open(SCHEMAS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("integrations", {})
-    return {}
 
 
 def _get_integration_type_name(integration_type: IntegrationType) -> str:
@@ -52,7 +42,7 @@ def _get_integration_type_label(integration_type: IntegrationType) -> str:
 def list_cmd():
     """List available and enabled integrations"""
     builtin = get_builtin_integrations()
-    schemas = load_install_schemas()
+    schemas = get_all_install_schemas()
     config = ConfigManager().load()
     integrations_config = config.get("integrations", {})
     active_config = config.get("active", {})
@@ -129,14 +119,13 @@ def _is_configured(config: dict, schema: dict) -> bool:
 def install_cmd(name: str):
     """Install and configure an integration"""
     builtin = get_builtin_integrations()
-    schemas = load_install_schemas()
 
     if name not in builtin:
         typer.secho(f"❌ '{name}' integration not found.", fg=typer.colors.RED)
         typer.echo(f"   Available: {', '.join(builtin)}")
         raise typer.Exit(1)
 
-    schema = schemas.get(name)
+    schema = get_install_schema(name)
     if not schema:
         typer.secho(f"❌ No install schema for '{name}'.", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -146,9 +135,13 @@ def install_cmd(name: str):
     if schema.get("description"):
         typer.echo(f"   {schema['description']}\n")
 
-    # Collect field values
+    # Start with defaults from schema
     config_values = {"enabled": True}
+    defaults = schema.get("defaults", {})
+    for key, value in defaults.items():
+        config_values[key] = value
 
+    # Collect field values (overrides defaults)
     for field in schema.get("fields", []):
         value = _prompt_field(field)
         if value is not None:
@@ -351,7 +344,6 @@ def remove_cmd(name: str):
 def use_cmd(name: str):
     """Set an integration as active for its type"""
     builtin = get_builtin_integrations()
-    schemas = load_install_schemas()
 
     if name not in builtin:
         typer.secho(f"❌ '{name}' integration not found.", fg=typer.colors.RED)
@@ -369,7 +361,7 @@ def use_cmd(name: str):
 
     config = ConfigManager().load()
     integrations_config = config.get("integrations", {})
-    schema = schemas.get(name, {})
+    schema = get_install_schema(name) or {}
 
     # Check if integration is installed and configured
     enabled = integrations_config.get(name, {}).get("enabled", False)
@@ -399,3 +391,576 @@ def use_cmd(name: str):
         typer.secho(f"✅ {type_label}: {name} (active)", fg=typer.colors.GREEN)
 
     typer.echo(f"   Configuration saved to .redgit/config.yaml")
+
+
+# ==================== Create Custom Integration ====================
+
+INTEGRATION_TYPES = {
+    "1": ("task_management", "TaskManagementBase", "Task Management (Jira, Linear, etc.)"),
+    "2": ("code_hosting", "CodeHostingBase", "Code Hosting (GitHub, GitLab, etc.)"),
+    "3": ("notification", "NotificationBase", "Notification (Slack, Discord, etc.)"),
+    "4": ("analysis", "AnalysisBase", "Analysis (Code review, metrics, etc.)"),
+}
+
+
+def _generate_init_py(name: str, class_name: str, base_class: str, type_name: str, description: str) -> str:
+    """Generate __init__.py template for custom integration."""
+    return f'''"""
+{class_name} - Custom RedGit Integration
+
+{description}
+
+This integration was created with: rg integration create
+Documentation: See README.md in this folder
+"""
+
+from pathlib import Path
+from typing import Optional, Dict, Any, List
+
+from redgit.integrations.base import {base_class}, IntegrationType
+
+
+class {class_name}({base_class}):
+    """
+    {description}
+
+    Configuration (.redgit/config.yaml):
+        integrations:
+          {name}:
+            enabled: true
+            api_key: "your-api-key"
+            # Add your config fields here
+    """
+
+    name = "{name}"
+    integration_type = IntegrationType.{type_name.upper()}
+
+    def __init__(self):
+        super().__init__()
+        self.api_key = ""
+        # Add your instance variables here
+
+    def setup(self, config: dict):
+        """
+        Initialize the integration with config values.
+        Called when the integration is loaded.
+        """
+        self.api_key = config.get("api_key", "")
+        # Load your config values here
+
+        if not self.api_key:
+            self.enabled = False
+            return
+
+        self.enabled = True
+
+    def validate_connection(self) -> bool:
+        """Test if the integration can connect to the external service."""
+        if not self.enabled:
+            return False
+
+        # TODO: Implement connection validation
+        # Example: Make a test API call
+        return True
+
+    # ==================== AI-Powered Methods ====================
+    # Use prompts from the prompts/ folder for AI operations
+
+    def _load_prompt(self, prompt_name: str, **kwargs) -> str:
+        """
+        Load a prompt template from the prompts/ folder.
+
+        Args:
+            prompt_name: Name of the prompt file (without .txt extension)
+            **kwargs: Variables to substitute in the prompt
+
+        Returns:
+            Formatted prompt string
+        """
+        prompt_dir = Path(__file__).parent / "prompts"
+        prompt_file = prompt_dir / f"{{prompt_name}}.txt"
+
+        if not prompt_file.exists():
+            return ""
+
+        template = prompt_file.read_text(encoding="utf-8")
+
+        # Simple variable substitution
+        for key, value in kwargs.items():
+            template = template.replace(f"{{{{{{key}}}}}}", str(value))
+
+        return template
+
+    def analyze_with_ai(self, content: str) -> Optional[Dict[str, Any]]:
+        """
+        Example AI-powered analysis method.
+
+        Uses the 'analyze' prompt from prompts/analyze.txt
+        """
+        prompt = self._load_prompt("analyze", content=content)
+
+        if not prompt:
+            return None
+
+        # TODO: Call your AI service here
+        # Example with OpenAI:
+        # response = openai.chat.completions.create(
+        #     model="gpt-4",
+        #     messages=[{{"role": "user", "content": prompt}}]
+        # )
+        # return {{"result": response.choices[0].message.content}}
+
+        return {{"prompt": prompt, "status": "not_implemented"}}
+
+    # ==================== Hook Methods ====================
+    # Override these methods to react to RedGit events
+
+    def on_commit(self, commit_data: dict):
+        """Called after a commit is created."""
+        pass
+
+    def on_branch_create(self, branch_name: str):
+        """Called after a branch is created."""
+        pass
+
+    # ==================== Custom Commands ====================
+    # Add integration-specific CLI commands in commands.py
+
+    @classmethod
+    def after_install(cls, config: dict) -> dict:
+        """
+        Hook called after installation.
+        Use this to modify config or perform setup tasks.
+        """
+        # Example: Add default values
+        # config.setdefault("some_option", "default_value")
+        return config
+'''
+
+
+def _generate_commands_py(name: str, class_name: str) -> str:
+    """Generate commands.py template for CLI commands."""
+    return f'''"""
+CLI commands for {class_name} integration.
+
+Commands are automatically registered when the integration is active.
+Usage: rg {name} <command>
+"""
+
+import typer
+
+{name}_app = typer.Typer(help="{class_name} integration commands")
+
+
+@{name}_app.command("status")
+def status_cmd():
+    """Show integration status and connection info."""
+    from redgit.core.config import ConfigManager
+    from redgit.integrations.registry import load_integration_by_name
+
+    config = ConfigManager().load()
+    integration_config = config.get("integrations", {{}}).get("{name}", {{}})
+
+    if not integration_config.get("enabled"):
+        typer.secho("❌ {class_name} integration is not enabled.", fg=typer.colors.RED)
+        typer.echo("   Run: rg integration install {name}")
+        raise typer.Exit(1)
+
+    integration = load_integration_by_name("{name}", integration_config)
+
+    if not integration or not integration.enabled:
+        typer.secho("⚠️  {class_name} is enabled but not properly configured.", fg=typer.colors.YELLOW)
+        raise typer.Exit(1)
+
+    typer.secho("✅ {class_name} integration is active", fg=typer.colors.GREEN)
+
+    # Test connection
+    if hasattr(integration, 'validate_connection'):
+        if integration.validate_connection():
+            typer.echo("   Connection: OK")
+        else:
+            typer.secho("   Connection: FAILED", fg=typer.colors.RED)
+
+
+@{name}_app.command("test")
+def test_cmd(message: str = typer.Argument("Hello from {class_name}!")):
+    """Test the integration with a sample operation."""
+    typer.echo(f"Testing {class_name} with: {{message}}")
+
+    # TODO: Implement your test logic
+    typer.secho("✅ Test completed!", fg=typer.colors.GREEN)
+
+
+@{name}_app.command("analyze")
+def analyze_cmd(
+    text: str = typer.Option(None, "--text", "-t", help="Text to analyze"),
+    file: str = typer.Option(None, "--file", "-f", help="File to analyze")
+):
+    """Run AI-powered analysis (example command)."""
+    from redgit.core.config import ConfigManager
+    from redgit.integrations.registry import load_integration_by_name
+
+    config = ConfigManager().load()
+    integration_config = config.get("integrations", {{}}).get("{name}", {{}})
+    integration = load_integration_by_name("{name}", integration_config)
+
+    if not integration:
+        typer.secho("❌ Integration not configured.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    content = text
+    if file:
+        from pathlib import Path
+        content = Path(file).read_text(encoding="utf-8")
+
+    if not content:
+        typer.echo("Please provide --text or --file")
+        raise typer.Exit(1)
+
+    typer.echo("Analyzing...")
+    result = integration.analyze_with_ai(content)
+
+    if result:
+        typer.echo(f"Result: {{result}}")
+    else:
+        typer.secho("Analysis failed.", fg=typer.colors.RED)
+'''
+
+
+def _generate_install_schema(name: str, display_name: str, description: str) -> dict:
+    """Generate install_schema.json content."""
+    return {
+        "name": display_name,
+        "description": description,
+        "fields": [
+            {
+                "key": "api_key",
+                "prompt": "API Key",
+                "type": "secret",
+                "env_var": f"{name.upper()}_API_KEY",
+                "help": "Your API key for authentication",
+                "required": True
+            },
+            {
+                "key": "base_url",
+                "prompt": "API Base URL (optional)",
+                "type": "text",
+                "required": False,
+                "help": "Override the default API endpoint"
+            }
+        ],
+        "defaults": {}
+    }
+
+
+def _generate_readme(name: str, class_name: str, description: str) -> str:
+    """Generate README.md documentation."""
+    return f'''# {class_name} Integration
+
+{description}
+
+## Installation
+
+```bash
+rg integration install {name}
+```
+
+## Configuration
+
+Add to `.redgit/config.yaml`:
+
+```yaml
+integrations:
+  {name}:
+    enabled: true
+    api_key: "your-api-key"
+    # Add additional config here
+```
+
+Or set environment variable:
+```bash
+export {name.upper()}_API_KEY="your-api-key"
+```
+
+## Usage
+
+### CLI Commands
+
+```bash
+# Check integration status
+rg {name} status
+
+# Run a test
+rg {name} test "Hello World"
+
+# Analyze content with AI
+rg {name} analyze --text "Your text here"
+rg {name} analyze --file path/to/file.txt
+```
+
+### Programmatic Usage
+
+```python
+from redgit.integrations.registry import load_integration_by_name
+
+config = {{"enabled": True, "api_key": "your-key"}}
+integration = load_integration_by_name("{name}", config)
+
+if integration and integration.enabled:
+    result = integration.analyze_with_ai("Your content")
+```
+
+## AI Prompts
+
+This integration uses prompt templates from the `prompts/` folder:
+
+- `prompts/analyze.txt` - Template for AI analysis
+- `prompts/summarize.txt` - Template for summarization
+- `prompts/custom.txt` - Add your own prompts
+
+### Using Prompts
+
+```python
+# In your integration code:
+prompt = self._load_prompt("analyze", content="Your content here")
+```
+
+### Creating Custom Prompts
+
+1. Create a new file in `prompts/` folder (e.g., `my_prompt.txt`)
+2. Use `{{variable}}` syntax for substitution
+3. Load with `self._load_prompt("my_prompt", variable="value")`
+
+## Development
+
+### File Structure
+
+```
+.redgit/integrations/{name}/
+├── __init__.py          # Main integration class
+├── commands.py          # CLI commands
+├── install_schema.json  # Installation wizard schema
+├── README.md            # This documentation
+└── prompts/             # AI prompt templates
+    ├── analyze.txt
+    ├── summarize.txt
+    └── custom.txt
+```
+
+### Adding New Features
+
+1. Add methods to `{class_name}` in `__init__.py`
+2. Add CLI commands in `commands.py`
+3. Create prompt templates in `prompts/`
+
+### Testing
+
+```bash
+# Test your integration
+rg {name} status
+rg {name} test
+```
+
+## API Reference
+
+### {class_name}
+
+| Method | Description |
+|--------|-------------|
+| `setup(config)` | Initialize with config |
+| `validate_connection()` | Test API connection |
+| `analyze_with_ai(content)` | AI-powered analysis |
+| `_load_prompt(name, **kwargs)` | Load prompt template |
+
+## Troubleshooting
+
+### Integration not found
+
+Make sure the integration folder is in `.redgit/integrations/` and contains `__init__.py`.
+
+### Connection failed
+
+1. Check your API key
+2. Verify network connectivity
+3. Check the base URL configuration
+
+## License
+
+This integration is part of your local RedGit configuration.
+'''
+
+
+def _generate_prompt_analyze() -> str:
+    """Generate analyze.txt prompt template."""
+    return '''You are an expert analyst. Analyze the following content and provide insights.
+
+## Content to Analyze
+
+{content}
+
+## Instructions
+
+1. Identify the main topics and themes
+2. Extract key information
+3. Provide a structured analysis
+
+## Output Format
+
+Provide your analysis in the following format:
+
+### Summary
+[Brief summary of the content]
+
+### Key Points
+- [Point 1]
+- [Point 2]
+- [Point 3]
+
+### Recommendations
+[Any recommendations based on the analysis]
+'''
+
+
+def _generate_prompt_summarize() -> str:
+    """Generate summarize.txt prompt template."""
+    return '''Summarize the following content concisely.
+
+## Content
+
+{content}
+
+## Requirements
+
+- Keep the summary under {max_length} words
+- Focus on the most important information
+- Use clear, simple language
+
+## Summary
+'''
+
+
+def _generate_prompt_custom() -> str:
+    """Generate custom.txt prompt template example."""
+    return '''# Custom Prompt Template
+
+This is an example custom prompt. Modify it for your specific use case.
+
+## Input
+
+{input}
+
+## Context
+
+{context}
+
+## Task
+
+{task}
+
+## Output
+
+Provide your response below:
+'''
+
+
+@integration_app.command("create")
+def create_cmd(name: str = typer.Argument(None, help="Integration name (lowercase, underscores allowed)")):
+    """Create a new custom integration from template."""
+    typer.echo("\n🔧 Create Custom Integration\n")
+
+    # Get integration name
+    if not name:
+        name = typer.prompt("   Integration name (lowercase, e.g., my_service)")
+
+    # Validate name
+    name = name.lower().replace("-", "_").replace(" ", "_")
+    if not name.isidentifier():
+        typer.secho(f"❌ Invalid name '{name}'. Use lowercase letters, numbers, and underscores.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    # Check if already exists
+    integration_dir = Path(".redgit/integrations") / name
+    if integration_dir.exists():
+        typer.secho(f"❌ Integration '{name}' already exists at {integration_dir}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    # Check builtin integrations
+    builtin = get_builtin_integrations()
+    if name in builtin:
+        typer.secho(f"❌ '{name}' conflicts with a builtin integration.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    # Get display name
+    default_display = "".join(word.capitalize() for word in name.split("_"))
+    display_name = typer.prompt("   Display name", default=default_display)
+
+    # Get description
+    description = typer.prompt("   Description", default=f"{display_name} custom integration for RedGit")
+
+    # Get integration type
+    typer.echo("\n   Integration type:")
+    for key, (_, _, label) in INTEGRATION_TYPES.items():
+        typer.echo(f"     [{key}] {label}")
+
+    type_choice = typer.prompt("   Select type", default="4")
+    type_name, base_class, _ = INTEGRATION_TYPES.get(type_choice, INTEGRATION_TYPES["4"])
+
+    # Generate class name
+    class_name = "".join(word.capitalize() for word in name.split("_")) + "Integration"
+
+    # Create directory structure
+    typer.echo(f"\n   Creating {integration_dir}...")
+    integration_dir.mkdir(parents=True, exist_ok=True)
+
+    prompts_dir = integration_dir / "prompts"
+    prompts_dir.mkdir(exist_ok=True)
+
+    # Generate files
+    files_created = []
+
+    # __init__.py
+    init_file = integration_dir / "__init__.py"
+    init_file.write_text(_generate_init_py(name, class_name, base_class, type_name, description), encoding="utf-8")
+    files_created.append("__init__.py")
+
+    # commands.py
+    commands_file = integration_dir / "commands.py"
+    commands_file.write_text(_generate_commands_py(name, class_name), encoding="utf-8")
+    files_created.append("commands.py")
+
+    # install_schema.json
+    schema_file = integration_dir / "install_schema.json"
+    schema_file.write_text(json.dumps(_generate_install_schema(name, display_name, description), indent=2, ensure_ascii=False), encoding="utf-8")
+    files_created.append("install_schema.json")
+
+    # README.md
+    readme_file = integration_dir / "README.md"
+    readme_file.write_text(_generate_readme(name, class_name, description), encoding="utf-8")
+    files_created.append("README.md")
+
+    # Prompt templates
+    (prompts_dir / "analyze.txt").write_text(_generate_prompt_analyze(), encoding="utf-8")
+    (prompts_dir / "summarize.txt").write_text(_generate_prompt_summarize(), encoding="utf-8")
+    (prompts_dir / "custom.txt").write_text(_generate_prompt_custom(), encoding="utf-8")
+    files_created.append("prompts/analyze.txt")
+    files_created.append("prompts/summarize.txt")
+    files_created.append("prompts/custom.txt")
+
+    # Refresh integration cache
+    from ..integrations.registry import refresh_integrations
+    refresh_integrations()
+
+    # Success message
+    typer.echo("")
+    typer.secho(f"✅ Created custom integration: {name}", fg=typer.colors.GREEN)
+    typer.echo(f"\n   📁 Location: {integration_dir}")
+    typer.echo(f"\n   📄 Files created:")
+    for f in files_created:
+        typer.echo(f"      - {f}")
+
+    typer.echo(f"\n   📚 Next steps:")
+    typer.echo(f"      1. Edit {integration_dir}/__init__.py to add your logic")
+    typer.echo(f"      2. Customize prompts in {prompts_dir}/")
+    typer.echo(f"      3. Install: rg integration install {name}")
+    typer.echo(f"      4. Test: rg {name} status")
+    typer.echo("")
