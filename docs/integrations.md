@@ -9,10 +9,19 @@ RedGit supports various integrations for task management and code hosting platfo
 | Jira | Task Management | ✅ Available | [jira.md](integrations/jira.md) |
 | Scout | AI Project Planning | ✅ Available | [scout.md](integrations/scout.md) |
 | GitHub | Code Hosting | ✅ Available | [github.md](integrations/github.md) |
-| Linear | Task Management | 🔜 Planned | - |
-| GitLab | Code Hosting | 🔜 Planned | - |
-| Bitbucket | Code Hosting | 🔜 Planned | - |
-| Slack | Notifications | 🔜 Planned | - |
+| Linear | Task Management | ✅ Available | - |
+| GitLab | Code Hosting | ✅ Available | - |
+| Bitbucket | Code Hosting | ✅ Available | - |
+| GitHub Actions | CI/CD | ✅ Available | - |
+| GitLab CI | CI/CD | ✅ Available | - |
+| Jenkins | CI/CD | ✅ Available | - |
+| CircleCI | CI/CD | ✅ Available | - |
+| Travis CI | CI/CD | ✅ Available | - |
+| Azure Pipelines | CI/CD | ✅ Available | - |
+| Bitbucket Pipelines | CI/CD | ✅ Available | - |
+| Drone CI | CI/CD | ✅ Available | - |
+| Slack | Notifications | ✅ Available | - |
+| Discord | Notifications | ✅ Available | - |
 
 ## Quick Start
 
@@ -44,20 +53,37 @@ rg integration list
 │                                                             │
 │  TaskManagementBase                                         │
 │  ├── JiraIntegration                                        │
-│  ├── LinearIntegration (planned)                            │
-│  └── AsanaIntegration (planned)                             │
+│  ├── LinearIntegration                                      │
+│  ├── NotionIntegration                                      │
+│  ├── AsanaIntegration                                       │
+│  └── TrelloIntegration                                      │
 │                                                             │
 │  CodeHostingBase                                            │
 │  ├── GitHubIntegration                                      │
-│  ├── GitLabIntegration (planned)                            │
-│  └── BitbucketIntegration (planned)                         │
+│  ├── GitLabIntegration                                      │
+│  ├── BitbucketIntegration                                   │
+│  ├── AzureReposIntegration                                  │
+│  └── CodeCommitIntegration                                  │
+│                                                             │
+│  CICDBase                                                   │
+│  ├── GitHubActionsIntegration                               │
+│  ├── GitLabCIIntegration                                    │
+│  ├── JenkinsIntegration                                     │
+│  ├── CircleCIIntegration                                    │
+│  ├── TravisCIIntegration                                    │
+│  ├── AzurePipelinesIntegration                              │
+│  ├── BitbucketPipelinesIntegration                          │
+│  └── DroneCIIntegration                                     │
+│                                                             │
+│  NotificationBase                                           │
+│  ├── SlackIntegration                                       │
+│  ├── DiscordIntegration                                     │
+│  ├── TelegramIntegration                                    │
+│  ├── MSTeamsIntegration                                     │
+│  └── MattermostIntegration                                  │
 │                                                             │
 │  AIIntegrationBase                                          │
 │  └── ScoutIntegration (AI project planning & team mgmt)     │
-│                                                             │
-│  NotificationBase                                           │
-│  ├── SlackIntegration (planned)                             │
-│  └── DiscordIntegration (planned)                           │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -70,6 +96,8 @@ Integrations are configured in `.redgit/config.yaml`:
 active:
   task_management: jira
   code_hosting: github
+  ci_cd: github-actions
+  notification: slack
 
 integrations:
   jira:
@@ -80,6 +108,13 @@ integrations:
   github:
     owner: your-username
     repo: your-repo
+
+  github-actions:
+    owner: your-username
+    repo: your-repo
+
+  slack:
+    webhook_url: https://hooks.slack.com/...
 ```
 
 ## Environment Variables
@@ -90,6 +125,13 @@ Sensitive data should be stored in environment variables:
 |-------------|---------------------|
 | Jira | `JIRA_API_TOKEN` |
 | GitHub | `GITHUB_TOKEN` |
+| GitHub Actions | `GITHUB_TOKEN` |
+| GitLab CI | `GITLAB_TOKEN` |
+| Jenkins | `JENKINS_API_TOKEN` |
+| CircleCI | `CIRCLECI_TOKEN` |
+| Travis CI | `TRAVIS_TOKEN` |
+| Azure Pipelines | `AZURE_DEVOPS_PAT` |
+| Drone CI | `DRONE_TOKEN` |
 | Scout | `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` |
 
 ---
@@ -386,3 +428,370 @@ Integration install wizards use `install_schemas.json`:
      task_management: jira
      code_hosting: none  # Disable if not needed
    ```
+
+---
+
+## CI/CD Integrations
+
+RedGit supports various CI/CD platforms to manage pipelines directly from the command line.
+
+### Available CI/CD Integrations
+
+| Integration | Description |
+|-------------|-------------|
+| `github-actions` | GitHub Actions workflows |
+| `gitlab-ci` | GitLab CI/CD pipelines |
+| `jenkins` | Jenkins jobs and builds |
+| `circleci` | CircleCI pipelines |
+| `travis-ci` | Travis CI builds |
+| `azure-pipelines` | Azure DevOps pipelines |
+| `bitbucket-pipelines` | Bitbucket Pipelines |
+| `drone-ci` | Drone CI builds |
+
+### Installation
+
+```bash
+# Install a CI/CD integration
+rg install github-actions
+rg install gitlab-ci
+rg install jenkins
+```
+
+### GitHub Actions
+
+```yaml
+# .redgit/config.yaml
+active:
+  ci_cd: github-actions
+
+integrations:
+  github-actions:
+    owner: your-username
+    repo: your-repo
+    # token: stored in GITHUB_TOKEN env var
+```
+
+### GitLab CI
+
+```yaml
+# .redgit/config.yaml
+active:
+  ci_cd: gitlab-ci
+
+integrations:
+  gitlab-ci:
+    url: https://gitlab.com        # or self-hosted URL
+    project_id: "12345"            # or "group/project"
+    # token: stored in GITLAB_TOKEN env var
+```
+
+### Jenkins
+
+```yaml
+# .redgit/config.yaml
+active:
+  ci_cd: jenkins
+
+integrations:
+  jenkins:
+    url: https://jenkins.company.com
+    username: your-username
+    job_name: my-pipeline          # Optional, auto-detects from repo
+    # token: stored in JENKINS_API_TOKEN env var
+```
+
+### CircleCI
+
+```yaml
+# .redgit/config.yaml
+active:
+  ci_cd: circleci
+
+integrations:
+  circleci:
+    project_slug: gh/owner/repo    # or bb/owner/repo for Bitbucket
+    # token: stored in CIRCLECI_TOKEN env var
+```
+
+### Drone CI
+
+```yaml
+# .redgit/config.yaml
+active:
+  ci_cd: drone-ci
+
+integrations:
+  drone-ci:
+    server: https://drone.company.com
+    owner: your-username
+    repo: your-repo
+    # token: stored in DRONE_TOKEN env var
+```
+
+### CI/CD Commands
+
+```bash
+# Show CI/CD status overview
+rg ci status
+
+# List recent pipelines/builds
+rg ci pipelines
+rg ci pipelines --branch main --limit 20
+rg ci pipelines --status failed
+
+# Show pipeline details
+rg ci pipeline 12345
+
+# List jobs/stages in a pipeline
+rg ci jobs 12345
+
+# Trigger a new pipeline
+rg ci trigger
+rg ci trigger --branch main
+rg ci trigger --workflow build --param KEY=VALUE
+
+# Watch pipeline until completion
+rg ci watch 12345
+rg ci watch          # Watch latest pipeline on current branch
+
+# Cancel/Retry pipelines
+rg ci cancel 12345
+rg ci retry 12345
+
+# View build logs
+rg ci logs 12345
+rg ci logs 12345 --job build --tail 100
+```
+
+### Integration with Push
+
+CI/CD pipelines can be triggered automatically after `rg push`:
+
+```bash
+# Push and trigger CI/CD pipeline
+rg push --ci
+
+# Push and wait for pipeline to complete
+rg push --ci --wait-ci
+
+# Push without triggering CI (even if integration is active)
+rg push --no-ci
+```
+
+When `--wait-ci` is used:
+- RedGit will poll the pipeline status every 10 seconds
+- Maximum wait time is 10 minutes
+- If a notification integration is configured, you'll be notified on completion
+
+### Creating CI/CD Integrations
+
+```python
+# redgit/integrations/my_cicd.py
+
+from .base import CICDBase, PipelineRun, PipelineJob, IntegrationType
+
+class MyCICDIntegration(CICDBase):
+    name = "my-cicd"
+    integration_type = IntegrationType.CI_CD
+
+    def setup(self, config: dict):
+        self.url = config.get("url")
+        self.token = config.get("token") or os.getenv("MY_CICD_TOKEN")
+        self.enabled = bool(self.url and self.token)
+
+    def trigger_pipeline(
+        self,
+        branch: str = None,
+        workflow: str = None,
+        inputs: dict = None
+    ) -> Optional[PipelineRun]:
+        """Trigger a new pipeline run."""
+        # Implement API call
+        return PipelineRun(
+            name="build-123",
+            status="running",
+            branch=branch,
+            url="https://..."
+        )
+
+    def get_pipeline_status(self, pipeline_id: str) -> Optional[PipelineRun]:
+        """Get status of a specific pipeline."""
+        # Implement API call
+        pass
+
+    def list_pipelines(
+        self,
+        branch: str = None,
+        status: str = None,
+        limit: int = 10
+    ) -> List[PipelineRun]:
+        """List recent pipeline runs."""
+        # Implement API call
+        pass
+
+    def cancel_pipeline(self, pipeline_id: str) -> bool:
+        """Cancel a running pipeline."""
+        # Implement API call
+        pass
+
+    def get_pipeline_jobs(self, pipeline_id: str) -> List[PipelineJob]:
+        """Get jobs/stages for a pipeline."""
+        # Implement API call
+        pass
+
+    def get_build_logs(
+        self,
+        pipeline_id: str,
+        job_id: str = None,
+        stage: int = None,
+        step: int = None
+    ) -> Optional[str]:
+        """Get build logs."""
+        # Implement API call
+        pass
+```
+
+### PipelineRun Dataclass
+
+```python
+@dataclass
+class PipelineRun:
+    name: str               # Pipeline ID or number
+    status: str             # running, success, failed, pending, etc.
+    branch: str = None      # Branch name
+    commit_sha: str = None  # Commit SHA
+    url: str = None         # Web URL to pipeline
+    duration: int = None    # Duration in seconds
+    trigger: str = None     # What triggered: push, manual, schedule, etc.
+```
+
+### PipelineJob Dataclass
+
+```python
+@dataclass
+class PipelineJob:
+    id: str                 # Job ID
+    name: str               # Job name
+    status: str             # running, success, failed, etc.
+    duration: int = None    # Duration in seconds
+    url: str = None         # Web URL to job
+```
+
+---
+
+## Notification Integrations
+
+RedGit supports notification integrations to keep you informed about important events.
+
+### Available Notification Integrations
+
+| Integration | Description |
+|-------------|-------------|
+| `slack` | Send notifications to Slack channels via webhooks |
+| `discord` | Send notifications to Discord channels via webhooks |
+| `telegram` | Send notifications via Telegram Bot API |
+| `msteams` | Send notifications to Microsoft Teams |
+| `mattermost` | Send notifications to Mattermost channels |
+| `rocketchat` | Send notifications to Rocket.Chat |
+| `zulip` | Send notifications to Zulip streams |
+| `whatsapp` | Send notifications via WhatsApp Business API |
+
+### Installation
+
+```bash
+# Install a notification integration
+rg install slack
+rg install discord
+rg install telegram
+```
+
+### Configuration
+
+```yaml
+# .redgit/config.yaml
+active:
+  notification: slack
+
+integrations:
+  slack:
+    webhook_url: https://hooks.slack.com/services/xxx
+    channel: "#dev-notifications"  # Optional
+
+  discord:
+    webhook_url: https://discord.com/api/webhooks/xxx
+
+  telegram:
+    bot_token: "123456:ABC..."  # or TELEGRAM_BOT_TOKEN env var
+    chat_id: "-1001234567890"
+```
+
+### Automatic Notification Points
+
+When a notification integration is active, RedGit automatically sends notifications for:
+
+| Event | Command | Notification |
+|-------|---------|--------------|
+| Push completed | `rg push` | 📤 Pushed `branch` to remote |
+| PR created | `rg push --pr` | 🔀 PR created for `branch` |
+| Issue completed | `rg push --complete` | ✅ Issue PROJ-123 marked as Done |
+| CI/CD success | `rg push --ci --wait-ci` | ✅ Pipeline completed successfully |
+| CI/CD failure | `rg push --ci --wait-ci` | ❌ Pipeline failed |
+| Issue created | `rg propose` | 🆕 Issue created: PROJ-123 |
+| Session complete | `rg propose` | 📦 Session complete: 3 commits, 2 issues |
+| Commit created | `rg propose --task` | 📝 Committed to `branch` (PROJ-123) |
+
+### Manual Notifications
+
+```bash
+# Send a custom notification
+rg notify "Deployment complete!"
+rg notify "Build #123 passed" --channel "#builds"
+```
+
+### Creating Notification Integrations
+
+```python
+# redgit/integrations/my_notification.py
+
+from .base import NotificationBase, IntegrationType
+
+class MyNotificationIntegration(NotificationBase):
+    name = "my-notification"
+    integration_type = IntegrationType.NOTIFICATION
+
+    def setup(self, config: dict):
+        self.webhook_url = config.get("webhook_url")
+        self.enabled = bool(self.webhook_url)
+
+    def send_message(self, message: str, channel: str = None) -> bool:
+        """Send a notification message."""
+        import requests
+
+        payload = {"text": message}
+        if channel:
+            payload["channel"] = channel
+
+        try:
+            response = requests.post(self.webhook_url, json=payload)
+            return response.ok
+        except Exception:
+            return False
+```
+
+### Using Notifications in Custom Integrations
+
+When creating custom integrations that should send notifications, use the `get_notification` helper:
+
+```python
+from redgit.integrations.registry import get_notification
+
+def my_custom_function(config: dict, event: str, details: str):
+    # Do your work...
+
+    # Send notification if available
+    notification = get_notification(config)
+    if notification and notification.enabled:
+        notification.send_message(f"{event}: {details}")
+```
+
+This ensures notifications are sent only when a notification integration is configured and active.

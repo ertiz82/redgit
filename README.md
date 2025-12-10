@@ -205,6 +205,48 @@ rg push --pr
 
 # Don't complete issues
 rg push --no-complete
+
+# Trigger CI/CD pipeline after push
+rg push --ci
+
+# Wait for CI/CD pipeline to complete
+rg push --ci --wait-ci
+
+# Push without triggering CI (even if integration active)
+rg push --no-ci
+```
+
+### `rg ci`
+
+CI/CD pipeline management.
+
+```bash
+# Show CI/CD status
+rg ci status
+
+# List recent pipelines
+rg ci pipelines
+rg ci pipelines --branch main --limit 20
+
+# Show pipeline details
+rg ci pipeline 12345
+
+# List jobs in a pipeline
+rg ci jobs 12345
+
+# Trigger a new pipeline
+rg ci trigger
+rg ci trigger --branch main --workflow build
+
+# Watch a pipeline until completion
+rg ci watch 12345
+
+# Cancel/retry a pipeline
+rg ci cancel 12345
+rg ci retry 12345
+
+# View pipeline logs
+rg ci logs 12345 --tail 100
 ```
 
 ### `rg integration`
@@ -248,6 +290,8 @@ Configuration is stored in `.redgit/config.yaml`:
 active:
   task_management: jira      # jira | linear | none
   code_hosting: github       # github | gitlab | none
+  ci_cd: github-actions      # github-actions | gitlab-ci | jenkins | none
+  notification: slack        # slack | discord | none
 
 # Workflow settings
 workflow:
@@ -341,6 +385,73 @@ rg integration install github
 **Features:**
 - Create pull requests
 - Link PRs with issues
+
+### CI/CD
+
+RedGit supports various CI/CD platforms to manage pipelines directly from the command line.
+
+#### Available CI/CD Integrations
+
+| Integration | Description |
+|-------------|-------------|
+| `github-actions` | GitHub Actions workflows |
+| `gitlab-ci` | GitLab CI/CD pipelines |
+| `jenkins` | Jenkins jobs and builds |
+| `circleci` | CircleCI pipelines |
+| `travis-ci` | Travis CI builds |
+| `azure-pipelines` | Azure DevOps pipelines |
+| `bitbucket-pipelines` | Bitbucket Pipelines |
+| `drone-ci` | Drone CI builds |
+
+#### Setup
+
+```bash
+# Install a CI/CD integration
+rg install github-actions
+rg install gitlab-ci
+rg install jenkins
+```
+
+#### GitHub Actions Example
+
+```yaml
+integrations:
+  github-actions:
+    owner: your-username
+    repo: your-repo
+    # token: stored in GITHUB_TOKEN env var
+```
+
+#### Jenkins Example
+
+```yaml
+integrations:
+  jenkins:
+    url: https://jenkins.company.com
+    username: your-username
+    # token: stored in JENKINS_API_TOKEN env var
+```
+
+#### Features
+
+- **Pipeline Management**: List, view, trigger, cancel, and retry pipelines
+- **Real-time Status**: Watch pipelines until completion
+- **Log Viewing**: View build logs directly in terminal
+- **Auto-trigger on Push**: Optionally trigger pipelines after `rg push`
+- **Notifications**: Get notified when pipelines complete (with notification integration)
+
+#### Usage with Push
+
+```bash
+# Push and trigger CI/CD pipeline
+rg push --ci
+
+# Push and wait for pipeline to complete
+rg push --ci --wait-ci
+
+# Push without triggering CI (even if integration is active)
+rg push --no-ci
+```
 
 ---
 
