@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any, List
 import yaml
 
 RETGIT_DIR = Path(".redgit")
@@ -12,6 +12,21 @@ DEFAULT_WORKFLOW = {
     "auto_transition": True,        # Auto transition issues (In Progress on commit, Done on push)
     "create_missing_issues": "ask", # ask | auto | skip
     "default_issue_type": "task",   # Default type for new issues
+}
+
+# Default notification settings
+DEFAULT_NOTIFICATIONS = {
+    "enabled": True,                # Master switch for all notifications
+    "events": {
+        "push": True,               # Notify on push completion
+        "pr_created": True,         # Notify on PR creation
+        "issue_completed": True,    # Notify on issue completion
+        "issue_created": True,      # Notify on issue creation
+        "commit": False,            # Notify on each commit (can be noisy)
+        "session_complete": True,   # Notify on session completion
+        "ci_success": True,         # Notify on CI/CD success
+        "ci_failure": True,         # Notify on CI/CD failure
+    }
 }
 
 
@@ -61,6 +76,201 @@ class ConfigManager:
             config["active"] = {}
         config["active"][integration_type] = name
         self.save(config)
+
+    def get_notifications_config(self) -> dict:
+        """Get notification settings with defaults."""
+        config = self.load()
+        notifications = config.get("notifications", {})
+
+        # Merge with defaults
+        result = DEFAULT_NOTIFICATIONS.copy()
+        result["enabled"] = notifications.get("enabled", DEFAULT_NOTIFICATIONS["enabled"])
+
+        # Merge events
+        result["events"] = DEFAULT_NOTIFICATIONS["events"].copy()
+        if "events" in notifications:
+            result["events"].update(notifications["events"])
+
+        return result
+
+    def is_notification_enabled(self, event: str) -> bool:
+        """Check if a specific notification event is enabled."""
+        notifications = self.get_notifications_config()
+
+        # Master switch
+        if not notifications.get("enabled", True):
+            return False
+
+        # Event-specific setting
+        events = notifications.get("events", {})
+        return events.get(event, True)
+
+    def get_value(self, path: str) -> Any:
+        """
+        Get a config value by dot-notation path.
+
+        Example: get_value("integrations.scout.enabled")
+        """
+        config = self.load()
+        keys = path.split(".")
+        value = config
+
+        for key in keys:
+            if isinstance(value, dict) and key in value:
+                value = value[key]
+            else:
+                return None
+
+        return value
+
+    def set_value(self, path: str, value: Any) -> bool:
+        """
+        Set a config value by dot-notation path.
+
+        Example: set_value("integrations.scout.enabled", False)
+        """
+        config = self.load()
+        keys = path.split(".")
+
+        # Navigate to parent
+        current = config
+        for key in keys[:-1]:
+            if key not in current:
+                current[key] = {}
+            current = current[key]
+
+        # Convert string values to appropriate types
+        final_value = self._parse_value(value)
+        current[keys[-1]] = final_value
+
+        self.save(config)
+        return True
+
+    def _parse_value(self, value: Any) -> Any:
+        """Parse string value to appropriate type."""
+        if isinstance(value, str):
+            # Boolean
+            if value.lower() in ("true", "yes", "on", "1"):
+                return True
+            if value.lower() in ("false", "no", "off", "0"):
+                return False
+            # None
+            if value.lower() in ("null", "none", "~"):
+                return None
+            # Number
+            try:
+                if "." in value:
+                    return float(value)
+                return int(value)
+            except ValueError:
+                pass
+        return value
+
+    def get_section(self, section: str = None) -> dict:
+        """
+        Get a section of config or entire config.
+
+        Example: get_section("plugins") or get_section() for full config
+        """
+        config = self.load()
+        if not section:
+            return config
+
+        keys = section.split(".")
+        value = config
+
+        for key in keys:
+            if isinstance(value, dict) and key in value:
+                value = value[key]
+            else:
+                return {}
+
+        return value if isinstance(value, dict) else {section.split(".")[-1]: value}
+
+    def list_keys(self, section: str = None) -> List[str]:
+        """List all keys in a section."""
+        data = self.get_section(section)
+        if isinstance(data, dict):
+            return list(data.keys())
+        return []
+
+    def register_notification_events(self, events: dict):
+        """
+        Register custom notification events from an integration.
+
+        Args:
+            events: Dict of event definitions
+                   {"event_name": {"description": "...", "default": True/False}}
+        """
+        if not events:
+            return
+
+        config = self.load()
+
+        # Ensure notifications.events exists
+        if "notifications" not in config:
+            config["notifications"] = {}
+        if "events" not in config["notifications"]:
+            config["notifications"]["events"] = {}
+
+        # Add new events with their default values
+        changed = False
+        for event_name, event_def in events.items():
+            if event_name not in config["notifications"]["events"]:
+                default_value = event_def.get("default", True)
+                config["notifications"]["events"][event_name] = default_value
+                changed = True
+
+        if changed:
+            self.save(config)
+
+    def get_all_notification_events(self) -> dict:
+        """
+        Get all notification events including custom ones.
+
+        Returns:
+            Dict of all events with their enabled status and descriptions
+        """
+        config = self.load()
+
+        # Start with defaults
+        result = {}
+        for event, default in DEFAULT_NOTIFICATIONS["events"].items():
+            result[event] = {
+                "enabled": config.get("notifications", {}).get("events", {}).get(event, default),
+                "description": self._get_event_description(event),
+                "default": default
+            }
+
+        # Add custom events from config
+        custom_events = config.get("notifications", {}).get("events", {})
+        for event, enabled in custom_events.items():
+            if event not in result:
+                result[event] = {
+                    "enabled": enabled,
+                    "description": f"Custom: {event}",
+                    "default": True
+                }
+
+        return result
+
+    def _get_event_description(self, event: str) -> str:
+        """Get description for a standard event."""
+        descriptions = {
+            "push": "Push completed",
+            "pr_created": "PR created",
+            "issue_completed": "Issue marked as Done",
+            "issue_created": "Issue created",
+            "commit": "Commit created",
+            "session_complete": "Session completed",
+            "ci_success": "CI/CD success",
+            "ci_failure": "CI/CD failure",
+            "ci_triggered": "CI/CD triggered",
+            "deploy_started": "Deployment started",
+            "deploy_success": "Deployment succeeded",
+            "deploy_failure": "Deployment failed",
+        }
+        return descriptions.get(event, event.replace("_", " ").title())
 
 
 class StateManager:
