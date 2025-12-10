@@ -464,12 +464,15 @@ def _process_task_commit(
     else:
         console.print(f"[yellow]⚠️  No task management configured, using {issue_key} as reference[/yellow]")
 
+    # Extract file paths from changes (changes is list of dicts)
+    file_paths = [c["file"] if isinstance(c, dict) else c for c in changes]
+
     # Show changes summary
-    console.print(f"\n[cyan]📁 {len(changes)} files will be committed:[/cyan]")
-    for f in changes[:10]:
+    console.print(f"\n[cyan]📁 {len(file_paths)} files will be committed:[/cyan]")
+    for f in file_paths[:10]:
         console.print(f"[dim]   • {f}[/dim]")
-    if len(changes) > 10:
-        console.print(f"[dim]   ... and {len(changes) - 10} more[/dim]")
+    if len(file_paths) > 10:
+        console.print(f"[dim]   ... and {len(file_paths) - 10} more[/dim]")
 
     # Generate commit message
     if issue:
@@ -502,9 +505,9 @@ def _process_task_commit(
     # Save base branch for session
     state_manager.set_base_branch(gitops.original_branch)
 
-    # Create branch and commit
+    # Create branch and commit (use file_paths, not changes dict)
     try:
-        success = gitops.create_branch_and_commit(branch_name, changes, msg, strategy=strategy)
+        success = gitops.create_branch_and_commit(branch_name, file_paths, msg, strategy=strategy)
 
         if success:
             if strategy == "local-merge":
@@ -517,7 +520,7 @@ def _process_task_commit(
                 group = {
                     "commit_title": commit_title,
                     "branch": branch_name,
-                    "files": changes
+                    "files": file_paths
                 }
                 task_mgmt.on_commit(group, {"issue_key": issue_key})
                 console.print(f"[blue]✓ Comment added to {issue_key}[/blue]")
