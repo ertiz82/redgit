@@ -110,7 +110,7 @@ def select_llm_provider() -> tuple:
                     subprocess.run(install_cmd, shell=True, check=True)
                     typer.echo(f"   ✓ {provider_config['name']} installed successfully!")
                 except subprocess.CalledProcessError:
-                    typer.echo(f"   ✗ Installation failed. Please install manually:")
+                    typer.echo("   ✗ Installation failed. Please install manually:")
                     typer.echo(f"     {install_cmd}")
 
         elif provider_config["type"] == "api":
@@ -119,7 +119,7 @@ def select_llm_provider() -> tuple:
                 typer.echo(f"   You need to set {env_key} environment variable.")
                 if typer.confirm("   Enter API key now?", default=True):
                     api_key = typer.prompt(f"   {env_key}", hide_input=True)
-                    typer.echo(f"   ✓ API key will be saved to config")
+                    typer.echo("   ✓ API key will be saved to config")
             else:
                 install_cmd = provider_config.get("install", "")
                 typer.echo(f"   Install: {install_cmd}")
@@ -177,6 +177,85 @@ def select_plugins() -> list:
             typer.echo(f"   ⚠️  Unknown plugin: {name}")
 
     return selected
+
+
+def check_semgrep_installed() -> bool:
+    """Check if Semgrep is installed."""
+    try:
+        result = subprocess.run(
+            ["semgrep", "--version"],
+            capture_output=True,
+            text=True
+        )
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+def install_semgrep() -> bool:
+    """Install Semgrep using pip."""
+    typer.echo("   Installing Semgrep...")
+    try:
+        subprocess.run(
+            ["pip", "install", "semgrep"],
+            check=True,
+            capture_output=True
+        )
+        typer.echo("   ✓ Semgrep installed successfully!")
+        return True
+    except subprocess.CalledProcessError as e:
+        typer.echo(f"   ✗ Installation failed: {e}")
+        typer.echo("   Try manually: pip install semgrep")
+        return False
+
+
+def select_semgrep_settings() -> dict:
+    """Interactive Semgrep settings. Returns semgrep config dict."""
+    typer.echo("\n🔬 Semgrep (Multi-language Static Analysis):")
+    typer.echo("   Supports 35+ languages: Python, JS, TS, Go, Java, PHP, Ruby, C#, etc.")
+
+    if not typer.confirm("   Enable Semgrep analysis?", default=False):
+        return {"enabled": False}
+
+    # Check if Semgrep is installed
+    if not check_semgrep_installed():
+        typer.echo("\n   ⚠️  Semgrep is not installed.")
+        if typer.confirm("   Install Semgrep now?", default=True):
+            if not install_semgrep():
+                typer.echo("   Semgrep will be disabled until installed.")
+                return {"enabled": False}
+        else:
+            typer.echo("   Semgrep will be disabled until installed.")
+            typer.echo("   Install later: pip install semgrep")
+            return {"enabled": False}
+
+    # Select rule configs
+    typer.echo("\n   Available rule packs:")
+    typer.echo("     [auto]            - Auto-detect based on project")
+    typer.echo("     [p/security-audit] - Security vulnerabilities")
+    typer.echo("     [p/python]        - Python best practices")
+    typer.echo("     [p/javascript]    - JavaScript/TypeScript rules")
+    typer.echo("     [p/golang]        - Go rules")
+    typer.echo("     [p/php]           - PHP rules")
+    typer.echo("     [p/java]          - Java rules")
+    typer.echo("     [p/owasp-top-ten] - OWASP Top 10")
+
+    configs_input = typer.prompt(
+        "   Rule packs (comma-separated)",
+        default="auto"
+    )
+
+    configs = [c.strip() for c in configs_input.split(",") if c.strip()]
+    if not configs:
+        configs = ["auto"]
+
+    return {
+        "enabled": True,
+        "configs": configs,
+        "severity": ["ERROR", "WARNING"],
+        "exclude": [],
+        "timeout": 300
+    }
 
 
 def select_quality_settings() -> dict:
@@ -276,6 +355,10 @@ def init_cmd():
     quality_config = select_quality_settings()
     config["quality"] = quality_config
 
+    # Semgrep settings
+    semgrep_config = select_semgrep_settings()
+    config["semgrep"] = semgrep_config
+
     # Editor config
     config["editor"] = {"command": ["code", "--wait"]}
 
@@ -296,12 +379,12 @@ def init_cmd():
 
     # Save config
     ConfigManager().save(config)
-    typer.echo(f"   ✓ Config saved")
+    typer.echo("   ✓ Config saved")
 
     typer.echo("")
     typer.secho("✅ redgit v1.0 setup complete.", fg=typer.colors.GREEN)
-    typer.echo(f"   📄 Config: .redgit/config.yaml")
-    typer.echo(f"   📝 Prompts: .redgit/prompts/")
+    typer.echo("   📄 Config: .redgit/config.yaml")
+    typer.echo("   📝 Prompts: .redgit/prompts/")
     typer.echo(f"   🤖 LLM: {provider} ({model})")
 
     if selected_plugins:
@@ -310,9 +393,13 @@ def init_cmd():
     if quality_config.get("enabled"):
         typer.echo(f"   🔍 Quality: enabled (threshold: {quality_config.get('threshold', 70)})")
 
+    if semgrep_config.get("enabled"):
+        configs_str = ", ".join(semgrep_config.get("configs", ["auto"]))
+        typer.echo(f"   🔬 Semgrep: enabled ({configs_str})")
+
     # Install selected integrations
     if selected_integrations:
-        typer.echo(f"\n🔌 Installing integrations...")
+        typer.echo("\n🔌 Installing integrations...")
         from .integration import install_cmd as integration_install
 
         for integ_name in selected_integrations:

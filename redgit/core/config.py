@@ -38,6 +38,15 @@ DEFAULT_QUALITY = {
     "prompt_file": "quality_prompt.md",  # Prompt template file name
 }
 
+# Default Semgrep settings
+DEFAULT_SEMGREP = {
+    "enabled": False,               # Master switch for Semgrep analysis
+    "configs": ["auto"],            # Semgrep configs: auto, p/security-audit, p/python, etc.
+    "severity": ["ERROR", "WARNING"],  # Minimum severity: ERROR, WARNING, INFO
+    "exclude": [],                  # Paths to exclude
+    "timeout": 300,                 # Timeout in seconds
+}
+
 
 class ConfigManager:
     def __init__(self):
@@ -320,6 +329,60 @@ class ConfigManager:
             config["quality"] = DEFAULT_QUALITY.copy()
         config["quality"]["threshold"] = max(0, min(100, threshold))
         self.save(config)
+
+    # Semgrep configuration methods
+    def get_semgrep_config(self) -> dict:
+        """Get Semgrep settings with defaults."""
+        config = self.load()
+        semgrep = config.get("semgrep", {})
+
+        # Merge with defaults
+        result = DEFAULT_SEMGREP.copy()
+        for key in DEFAULT_SEMGREP:
+            if key in semgrep:
+                result[key] = semgrep[key]
+
+        return result
+
+    def is_semgrep_enabled(self) -> bool:
+        """Check if Semgrep analysis is enabled."""
+        semgrep = self.get_semgrep_config()
+        return semgrep.get("enabled", False)
+
+    def set_semgrep_enabled(self, enabled: bool):
+        """Enable or disable Semgrep analysis."""
+        config = self.load()
+        if "semgrep" not in config:
+            config["semgrep"] = DEFAULT_SEMGREP.copy()
+        config["semgrep"]["enabled"] = enabled
+        self.save(config)
+
+    def get_semgrep_configs(self) -> List[str]:
+        """Get Semgrep rule configs."""
+        semgrep = self.get_semgrep_config()
+        return semgrep.get("configs", ["auto"])
+
+    def set_semgrep_configs(self, configs: List[str]):
+        """Set Semgrep rule configs."""
+        config = self.load()
+        if "semgrep" not in config:
+            config["semgrep"] = DEFAULT_SEMGREP.copy()
+        config["semgrep"]["configs"] = configs
+        self.save(config)
+
+    def add_semgrep_config(self, config_name: str):
+        """Add a Semgrep rule config."""
+        configs = self.get_semgrep_configs()
+        if config_name not in configs:
+            configs.append(config_name)
+            self.set_semgrep_configs(configs)
+
+    def remove_semgrep_config(self, config_name: str):
+        """Remove a Semgrep rule config."""
+        configs = self.get_semgrep_configs()
+        if config_name in configs:
+            configs.remove(config_name)
+            self.set_semgrep_configs(configs)
 
 
 class StateManager:
