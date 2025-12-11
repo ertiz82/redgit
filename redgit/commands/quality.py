@@ -491,13 +491,11 @@ def analyze_quality(
                 "issues": []
             }
 
-    # Get changed files for linter (Python only)
+    # Get changed Python files for linter
     if file:
         python_files = [file] if file.endswith(".py") and Path(file).exists() else []
-        all_files = [file] if Path(file).exists() else []
     else:
         python_files = _get_changed_files(commit=commit, branch=branch, python_only=True)
-        all_files = _get_changed_files(commit=commit, branch=branch, python_only=False)
 
     # Run linter on Python files
     linter_issues = []
@@ -507,23 +505,30 @@ def analyze_quality(
         if verbose and linter_name:
             console.print(f"[dim]{linter_name} found {len(linter_issues)} issue(s)[/dim]")
 
-    # Run Semgrep on all files (multi-language)
+    # Run Semgrep on all changed files (multi-language)
     semgrep_issues = []
-    if not skip_semgrep and config.is_semgrep_enabled() and all_files:
-        if verbose:
-            console.print(f"[dim]Running Semgrep on {len(all_files)} file(s)...[/dim]")
+    if not skip_semgrep and config.is_semgrep_enabled():
+        # Get all changed files (not just Python) for Semgrep
+        if file:
+            semgrep_files = [file] if Path(file).exists() else []
+        else:
+            semgrep_files = _get_changed_files(commit=commit, branch=branch, python_only=False)
 
-        try:
-            semgrep_result = semgrep_analyze_files(all_files)
-            if semgrep_result.get("success") and semgrep_result.get("results"):
-                semgrep_issues = convert_to_quality_issues(semgrep_result["results"])
-                if verbose:
-                    console.print(f"[dim]Semgrep found {len(semgrep_issues)} issue(s)[/dim]")
-            elif verbose and not semgrep_result.get("success"):
-                console.print(f"[yellow]Semgrep: {semgrep_result.get('error', 'Unknown error')}[/yellow]")
-        except Exception as e:
+        if semgrep_files:
             if verbose:
-                console.print(f"[yellow]Semgrep error: {e}[/yellow]")
+                console.print(f"[dim]Running Semgrep on {len(semgrep_files)} file(s)...[/dim]")
+
+            try:
+                semgrep_result = semgrep_analyze_files(semgrep_files)
+                if semgrep_result.get("success") and semgrep_result.get("results"):
+                    semgrep_issues = convert_to_quality_issues(semgrep_result["results"])
+                    if verbose:
+                        console.print(f"[dim]Semgrep found {len(semgrep_issues)} issue(s)[/dim]")
+                elif verbose and not semgrep_result.get("success"):
+                    console.print(f"[yellow]Semgrep: {semgrep_result.get('error', 'Unknown error')}[/yellow]")
+            except Exception as e:
+                if verbose:
+                    console.print(f"[yellow]Semgrep error: {e}[/yellow]")
 
     # Get diff for AI analysis
     diff = _get_diff(commit=commit, branch=branch, file=file)
@@ -789,7 +794,7 @@ def scan_cmd(
         if file_count > 0:
             lang_counts = _count_files_by_extension(scanned_files)
             lang_summary = ", ".join(f"{lang}: {count}" for lang, count in sorted(lang_counts.items(), key=lambda x: -x[1])[:5])
-            console.print(f"[bold]Scan Summary:[/bold]")
+            console.print("[bold]Scan Summary:[/bold]")
             console.print(f"  Files scanned: [cyan]{file_count}[/cyan]")
             console.print(f"  Languages: {lang_summary}")
             console.print()
