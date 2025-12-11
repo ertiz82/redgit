@@ -24,10 +24,19 @@ from rich.panel import Panel
 from ..core.config import ConfigManager, RETGIT_DIR
 from ..core.gitops import GitOps
 from ..core.llm import LLMClient
+from ..core.semgrep import (
+    is_semgrep_installed,
+    analyze_files as semgrep_analyze_files,
+    convert_to_quality_issues,
+    calculate_score_penalty as semgrep_score_penalty
+)
 from ..integrations.registry import get_code_quality, get_integrations_by_type, IntegrationType
 
 console = Console()
-quality_app = typer.Typer(help="Code quality analysis")
+quality_app = typer.Typer(
+    help="Code quality analysis",
+    no_args_is_help=True
+)
 
 # Supported linters in order of preference
 LINTERS = ["ruff", "flake8"]
@@ -59,8 +68,8 @@ def _find_linter() -> Optional[str]:
     return None
 
 
-def _get_changed_files(commit: Optional[str] = None, branch: Optional[str] = None) -> List[str]:
-    """Get list of changed Python files."""
+def _get_changed_files(commit: Optional[str] = None, branch: Optional[str] = None, python_only: bool = True) -> List[str]:
+    """Get list of changed files."""
     try:
         if commit:
             cmd = ["git", "diff", "--name-only", f"{commit}~1..{commit}"]
@@ -74,8 +83,14 @@ def _get_changed_files(commit: Optional[str] = None, branch: Optional[str] = Non
         result = subprocess.run(cmd, capture_output=True, text=True)
         files = result.stdout.strip().split("\n")
 
-        # Filter Python files only
-        return [f for f in files if f.endswith(".py") and Path(f).exists()]
+        # Filter files that exist
+        files = [f for f in files if f and Path(f).exists()]
+
+        # Filter Python files only if requested
+        if python_only:
+            return [f for f in files if f.endswith(".py")]
+
+        return files
     except Exception:
         return []
 
@@ -436,10 +451,11 @@ def analyze_quality(
     file: Optional[str] = None,
     verbose: bool = False,
     skip_linter: bool = False,
-    skip_ai: bool = False
+    skip_ai: bool = False,
+    skip_semgrep: bool = False
 ) -> dict:
     """
-    Analyze code quality using AI + linter (ruff/flake8).
+    Analyze code quality using AI + linter (ruff/flake8) + Semgrep.
 
     Returns:
         dict with score, decision, summary, issues
@@ -475,24 +491,44 @@ def analyze_quality(
                 "issues": []
             }
 
-    # Get changed files for linter
+    # Get changed files for linter (Python only)
     if file:
-        changed_files = [file] if file.endswith(".py") and Path(file).exists() else []
+        python_files = [file] if file.endswith(".py") and Path(file).exists() else []
+        all_files = [file] if Path(file).exists() else []
     else:
-        changed_files = _get_changed_files(commit=commit, branch=branch)
+        python_files = _get_changed_files(commit=commit, branch=branch, python_only=True)
+        all_files = _get_changed_files(commit=commit, branch=branch, python_only=False)
 
-    # Run linter on changed files
+    # Run linter on Python files
     linter_issues = []
     linter_name = ""
-    if not skip_linter and changed_files:
-        linter_issues, linter_name = _run_linter(changed_files, verbose=verbose)
+    if not skip_linter and python_files:
+        linter_issues, linter_name = _run_linter(python_files, verbose=verbose)
         if verbose and linter_name:
             console.print(f"[dim]{linter_name} found {len(linter_issues)} issue(s)[/dim]")
+
+    # Run Semgrep on all files (multi-language)
+    semgrep_issues = []
+    if not skip_semgrep and config.is_semgrep_enabled() and all_files:
+        if verbose:
+            console.print(f"[dim]Running Semgrep on {len(all_files)} file(s)...[/dim]")
+
+        try:
+            semgrep_result = semgrep_analyze_files(all_files)
+            if semgrep_result.get("success") and semgrep_result.get("results"):
+                semgrep_issues = convert_to_quality_issues(semgrep_result["results"])
+                if verbose:
+                    console.print(f"[dim]Semgrep found {len(semgrep_issues)} issue(s)[/dim]")
+            elif verbose and not semgrep_result.get("success"):
+                console.print(f"[yellow]Semgrep: {semgrep_result.get('error', 'Unknown error')}[/yellow]")
+        except Exception as e:
+            if verbose:
+                console.print(f"[yellow]Semgrep error: {e}[/yellow]")
 
     # Get diff for AI analysis
     diff = _get_diff(commit=commit, branch=branch, file=file)
 
-    if not diff and not linter_issues:
+    if not diff and not linter_issues and not semgrep_issues:
         return {
             "score": 100,
             "decision": "approve",
@@ -512,60 +548,69 @@ def analyze_quality(
                 console.print(f"[yellow]AI analysis failed: {e}[/yellow]")
             # Continue with linter-only results
 
-    # Merge results
+    # Merge all results
+    all_issues = list(ai_result.get("issues", []))
+    summary_parts = []
+
+    if ai_result.get("summary"):
+        summary_parts.append(ai_result["summary"])
+
+    # Add linter issues
+    existing_locations = {(i.get("file", ""), i.get("line", 0)) for i in all_issues}
+    for issue in linter_issues:
+        loc = (issue.get("file", ""), issue.get("line", 0))
+        if loc not in existing_locations:
+            all_issues.append(issue)
+            existing_locations.add(loc)
+
     if linter_issues:
-        return _merge_results(ai_result, linter_issues, linter_name)
-    else:
-        return ai_result
+        summary_parts.append(f"{linter_name}: {len(linter_issues)} issue(s)")
 
+    # Add Semgrep issues
+    for issue in semgrep_issues:
+        loc = (issue.get("file", ""), issue.get("line", 0))
+        if loc not in existing_locations:
+            all_issues.append(issue)
+            existing_locations.add(loc)
 
-@quality_app.callback(invoke_without_command=True)
-def quality_main(
-    ctx: typer.Context,
-    file: Optional[str] = typer.Argument(None, help="File to analyze"),
-    commit: Optional[str] = typer.Option(None, "--commit", "-c", help="Analyze specific commit"),
-    branch: Optional[str] = typer.Option(None, "--branch", "-b", help="Compare branch with main"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
-):
-    """Analyze code quality of changes."""
-    if ctx.invoked_subcommand is not None:
-        return
+    if semgrep_issues:
+        summary_parts.append(f"Semgrep: {len(semgrep_issues)} issue(s)")
 
-    config = ConfigManager()
+    # Calculate score
+    score = ai_result.get("score", 100)
 
-    # Check if quality is configured
-    if not config.is_quality_enabled():
-        console.print("[yellow]Code quality checks are not enabled.[/yellow]")
-        console.print()
-        console.print("Enable with: [cyan]rg config quality --enable[/cyan]")
-        console.print("Or run with: [cyan]rg quality check[/cyan] to analyze without enabling")
-        return
+    # Deduct for linter issues
+    linter_critical = sum(1 for i in linter_issues if i.get("severity") == "critical")
+    linter_high = sum(1 for i in linter_issues if i.get("severity") == "high")
+    linter_medium = sum(1 for i in linter_issues if i.get("severity") == "medium")
+    linter_penalty = min(50, linter_critical * 20 + linter_high * 10 + linter_medium * 3)
 
+    # Deduct for Semgrep issues
+    semgrep_penalty = semgrep_score_penalty(semgrep_issues) if semgrep_issues else 0
+
+    # Total penalty capped at 70
+    total_penalty = min(70, linter_penalty + semgrep_penalty)
+    adjusted_score = max(0, score - total_penalty)
+
+    # Determine decision
     threshold = config.get_quality_threshold()
+    has_critical = (
+        linter_critical > 0 or
+        any(i.get("severity") == "critical" for i in ai_result.get("issues", [])) or
+        any(i.get("severity") == "critical" for i in semgrep_issues)
+    )
 
-    console.print("[bold cyan]Analyzing code quality...[/bold cyan]")
+    if has_critical or adjusted_score < threshold:
+        decision = "reject"
+    else:
+        decision = "approve"
 
-    try:
-        result = analyze_quality(
-            commit=commit,
-            branch=branch,
-            file=file,
-            verbose=verbose
-        )
-
-        _display_result(result, threshold)
-
-        # Exit with error if rejected
-        if result.get("decision") != "approve":
-            console.print(f"\n[red]Quality score {result.get('score')} is below threshold {threshold}[/red]")
-            raise typer.Exit(1)
-
-    except FileNotFoundError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
-    except Exception as e:
-        console.print(f"[red]Analysis failed: {e}[/red]")
-        raise typer.Exit(1)
+    return {
+        "score": adjusted_score,
+        "decision": decision,
+        "summary": " | ".join(summary_parts) if summary_parts else "No issues found",
+        "issues": all_issues
+    }
 
 
 @quality_app.command("check")
@@ -606,11 +651,210 @@ def check_cmd(
         raise typer.Exit(1)
 
 
+def _count_files_by_extension(files: List[str]) -> Dict[str, int]:
+    """Count files by extension for language summary."""
+    ext_count: Dict[str, int] = {}
+    ext_to_lang = {
+        ".py": "Python",
+        ".js": "JavaScript",
+        ".ts": "TypeScript",
+        ".tsx": "TypeScript",
+        ".jsx": "JavaScript",
+        ".java": "Java",
+        ".go": "Go",
+        ".php": "PHP",
+        ".rb": "Ruby",
+        ".rs": "Rust",
+        ".c": "C",
+        ".cpp": "C++",
+        ".cs": "C#",
+        ".kt": "Kotlin",
+        ".swift": "Swift",
+        ".scala": "Scala",
+        ".yaml": "YAML",
+        ".yml": "YAML",
+        ".json": "JSON",
+        ".html": "HTML",
+        ".css": "CSS",
+        ".sql": "SQL",
+        ".sh": "Shell",
+        ".bash": "Shell",
+    }
+
+    for f in files:
+        ext = Path(f).suffix.lower()
+        lang = ext_to_lang.get(ext, ext.upper().lstrip(".") if ext else "Other")
+        ext_count[lang] = ext_count.get(lang, 0) + 1
+
+    return ext_count
+
+
+@quality_app.command("scan")
+def scan_cmd(
+    path: str = typer.Argument(".", help="Directory or file to scan"),
+    config: Optional[str] = typer.Option(None, "--config", "-c", help="Semgrep config (e.g., auto, p/security-audit)"),
+    severity: Optional[str] = typer.Option(None, "--severity", "-s", help="Minimum severity: ERROR, WARNING, INFO"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Save report to file"),
+    format: str = typer.Option("text", "--format", "-f", help="Output format: text, json"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
+):
+    """
+    Scan entire project with Semgrep (not just changes).
+
+    This command runs Semgrep on all files in the specified path,
+    regardless of git status. Useful for full project audits.
+
+    Examples:
+        rg quality scan                    # Scan current directory
+        rg quality scan src/               # Scan specific directory
+        rg quality scan -c p/security-audit  # Use security rules
+        rg quality scan -o report.json -f json  # Export as JSON
+    """
+    from ..core.semgrep import (
+        is_semgrep_installed,
+        run_semgrep,
+        convert_to_quality_issues,
+        get_severity_counts,
+        format_issue_report
+    )
+
+    # Check if Semgrep is installed
+    if not is_semgrep_installed():
+        console.print("[red]Semgrep is not installed.[/red]")
+        console.print("Install with: [cyan]pip install semgrep[/cyan]")
+        console.print("Or run: [cyan]rg config semgrep --install[/cyan]")
+        raise typer.Exit(1)
+
+    # Get config
+    cfg = ConfigManager()
+    semgrep_config = cfg.get_semgrep_config()
+
+    # Build configs list
+    configs = [config] if config else semgrep_config.get("configs", ["auto"])
+
+    # Build severity list
+    if severity:
+        severities = [s.strip().upper() for s in severity.split(",")]
+    else:
+        severities = semgrep_config.get("severity", ["ERROR", "WARNING"])
+
+    console.print(f"[bold cyan]Scanning {path} with Semgrep...[/bold cyan]")
+    if verbose:
+        console.print(f"[dim]Configs: {', '.join(configs)}[/dim]")
+        console.print(f"[dim]Severity: {', '.join(severities)}[/dim]")
+
+    # Run Semgrep
+    result = run_semgrep(
+        path=path,
+        configs=configs,
+        severity=severities,
+        exclude=semgrep_config.get("exclude", []),
+        timeout=semgrep_config.get("timeout", 300)
+    )
+
+    if not result.get("success"):
+        console.print(f"[red]Scan failed: {result.get('error', 'Unknown error')}[/red]")
+        raise typer.Exit(1)
+
+    # Get scan stats
+    stats = result.get("stats", {})
+    scanned_files = stats.get("paths_scanned", [])
+    file_count = len(scanned_files)
+
+    # Convert to quality issues
+    issues = convert_to_quality_issues(result.get("results", []))
+    counts = get_severity_counts(issues)
+
+    # Output based on format
+    if format == "json":
+        json_output = json.dumps({
+            "path": path,
+            "configs": configs,
+            "files_scanned": file_count,
+            "total_issues": len(issues),
+            "severity_counts": counts,
+            "issues": issues
+        }, indent=2)
+
+        if output:
+            Path(output).write_text(json_output)
+            console.print(f"\n[green]Report saved to {output}[/green]")
+        else:
+            console.print(json_output)
+    else:
+        # Text format - Summary
+        console.print()
+
+        # Show scan summary
+        if file_count > 0:
+            lang_counts = _count_files_by_extension(scanned_files)
+            lang_summary = ", ".join(f"{lang}: {count}" for lang, count in sorted(lang_counts.items(), key=lambda x: -x[1])[:5])
+            console.print(f"[bold]Scan Summary:[/bold]")
+            console.print(f"  Files scanned: [cyan]{file_count}[/cyan]")
+            console.print(f"  Languages: {lang_summary}")
+            console.print()
+        else:
+            console.print("[dim]No files were scanned (Semgrep may have filtered all files)[/dim]")
+            console.print()
+
+        if not issues:
+            console.print("[green]✓ No issues found! All files passed quality checks.[/green]")
+        else:
+            # Issues summary
+            console.print(f"[bold]Found {len(issues)} issue(s):[/bold]")
+            console.print(f"  [red]Critical: {counts['critical']}[/red]")
+            console.print(f"  [red]High: {counts['high']}[/red]")
+            console.print(f"  [yellow]Medium: {counts['medium']}[/yellow]")
+            console.print(f"  [blue]Low: {counts['low']}[/blue]")
+            console.print()
+
+            # Issues table
+            table = Table(show_header=True)
+            table.add_column("Severity", width=10)
+            table.add_column("File", style="dim")
+            table.add_column("Line", width=6)
+            table.add_column("Description")
+
+            for issue in issues:
+                sev = issue.get("severity", "medium")
+                color = _severity_color(sev)
+                table.add_row(
+                    f"[{color}]{sev.upper()}[/{color}]",
+                    issue.get("file", "-"),
+                    str(issue.get("line", "-")),
+                    issue.get("description", "")[:80]
+                )
+
+            console.print(table)
+
+            # Show suggestions for critical/high
+            if verbose:
+                critical_issues = [i for i in issues if i.get("severity") in ("critical", "high")]
+                if critical_issues:
+                    console.print("\n[bold]Suggestions:[/bold]")
+                    for issue in critical_issues[:10]:  # Limit to 10
+                        if issue.get("suggestion"):
+                            console.print(f"  [dim]{issue.get('file')}:{issue.get('line')}[/dim]")
+                            console.print(f"    {issue.get('suggestion')[:100]}")
+
+        # Save to file if requested
+        if output:
+            report = format_issue_report(issues, verbose=True)
+            Path(output).write_text(report)
+            console.print(f"\n[green]Report saved to {output}[/green]")
+
+    # Exit with error if critical issues found
+    if counts["critical"] > 0:
+        console.print(f"\n[red]Found {counts['critical']} critical issue(s)![/red]")
+        raise typer.Exit(1)
+
+
 @quality_app.command("status")
 def status_cmd():
     """Show quality settings and integration status."""
     config = ConfigManager()
     quality_config = config.get_quality_config()
+    semgrep_config = config.get_semgrep_config()
 
     console.print("\n[bold cyan]Code Quality Settings[/bold cyan]\n")
 
@@ -625,16 +869,32 @@ def status_cmd():
     if USER_PROMPT_PATH.exists():
         console.print(f"   [green]Custom prompt: {USER_PROMPT_PATH}[/green]")
     else:
-        console.print(f"   [dim]Using default prompt[/dim]")
+        console.print("   [dim]Using default prompt[/dim]")
 
     # Check for linter
     linter = _find_linter()
     console.print()
     if linter:
-        console.print(f"   Linter: [green]{linter}[/green]")
+        console.print(f"   Linter: [green]{linter}[/green] (Python)")
     else:
         console.print("   Linter: [yellow]Not found[/yellow] (install ruff or flake8)")
         console.print("     [dim]pip install ruff[/dim]")
+
+    # Check Semgrep status
+    console.print()
+    semgrep_enabled = semgrep_config.get("enabled", False)
+    semgrep_installed = is_semgrep_installed()
+
+    if semgrep_enabled and semgrep_installed:
+        configs = ", ".join(semgrep_config.get("configs", ["auto"]))
+        console.print("   Semgrep: [green]Enabled[/green] (35+ languages)")
+        console.print(f"     Rule packs: {configs}")
+    elif semgrep_enabled and not semgrep_installed:
+        console.print("   Semgrep: [yellow]Enabled but not installed[/yellow]")
+        console.print("     [dim]Install: pip install semgrep[/dim]")
+    else:
+        console.print("   Semgrep: [dim]Disabled[/dim]")
+        console.print("     [dim]Enable: rg config semgrep --enable[/dim]")
 
     # Check for integration
     quality_integration = _get_code_quality()
@@ -642,7 +902,7 @@ def status_cmd():
     if quality_integration:
         console.print(f"   Integration: [green]{quality_integration.name}[/green]")
     else:
-        console.print("   Integration: [dim]None (using AI + linter)[/dim]")
+        console.print("   Integration: [dim]None (using AI + linter + Semgrep)[/dim]")
         available = get_integrations_by_type(IntegrationType.CODE_QUALITY)
         if available:
             console.print()
