@@ -9,7 +9,7 @@ from rich.prompt import Confirm
 
 from ..core.config import ConfigManager, StateManager
 from ..core.gitops import GitOps
-from ..integrations.registry import get_task_management, get_code_hosting, get_cicd, get_notification
+from ..integrations.registry import get_task_management, get_code_hosting, get_cicd, get_notification, get_code_quality
 
 console = Console()
 
@@ -38,6 +38,18 @@ def push_cmd(
     wait_ci: bool = typer.Option(
         False, "--wait-ci", "-w",
         help="Wait for CI/CD pipeline to complete"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Skip quality checks and push anyway"
+    ),
+    skip_quality: bool = typer.Option(
+        False, "--skip-quality",
+        help="Skip code quality checks"
+    ),
+    no_pull: bool = typer.Option(
+        False, "--no-pull",
+        help="Skip pulling from remote before push"
     )
 ):
     """Push current branch or session branches and complete issues."""
@@ -45,6 +57,13 @@ def push_cmd(
     config_manager = ConfigManager()
     state_manager = StateManager()
     config = config_manager.load()
+
+    # Run quality check if enabled (unless skipped)
+    if not skip_quality and not force:
+        quality_passed = _run_quality_check(config_manager, config)
+        if not quality_passed:
+            console.print("\n[yellow]💡 Use --force to push anyway, or --skip-quality to skip checks[/yellow]")
+            raise typer.Exit(1)
 
     # Get session info
     session = state_manager.get_session()
@@ -54,7 +73,7 @@ def push_cmd(
 
     # If no session, push current branch
     if not session or not session.get("branches"):
-        _push_current_branch(gitops, config, complete, create_pr, issue, tags, trigger_ci, wait_ci)
+        _push_current_branch(gitops, config, complete, create_pr, issue, tags, trigger_ci, wait_ci, no_pull, force)
         return
 
     branches = session.get("branches", [])
@@ -89,7 +108,7 @@ def push_cmd(
         # Push branches and optionally create PRs
         _push_merge_request_strategy(
             branches, gitops, task_mgmt, code_hosting,
-            base_branch, create_pr, complete, config
+            base_branch, create_pr, complete, config, no_pull, force
         )
     else:
         # local-merge strategy: branches are already merged during propose
@@ -114,7 +133,7 @@ def push_cmd(
             return
 
         # Push current branch (all commits are already here)
-        _push_current_branch(gitops, config, complete=False, create_pr=create_pr, issue_key=issue, push_tags=tags)
+        _push_current_branch(gitops, config, complete=False, create_pr=create_pr, issue_key=issue, push_tags=tags, no_pull=no_pull, force=force)
 
         # Complete issues from session
         if complete and task_mgmt and task_mgmt.enabled and issues:
@@ -137,7 +156,9 @@ def _push_merge_request_strategy(
     base_branch: str,
     create_pr: bool,
     complete: bool,
-    config: dict = None
+    config: dict = None,
+    no_pull: bool = False,
+    force: bool = False
 ):
     """Push branches to remote and optionally create PRs."""
 
@@ -145,12 +166,32 @@ def _push_merge_request_strategy(
 
     pushed_issues = []
     pushed_branches = []
+    skipped_branches = []
 
     for b in branches:
         branch_name = b.get("branch", "")
         issue_key = b.get("issue_key")
 
         console.print(f"\n[cyan]• {branch_name}[/cyan]")
+
+        # Sync with remote before push (unless skipped)
+        if not no_pull and not force:
+            # Checkout branch first for sync
+            try:
+                gitops.repo.git.checkout(branch_name)
+            except Exception:
+                pass
+
+            success, conflict_files = _sync_with_remote(gitops, branch_name)
+            if not success:
+                console.print(f"[red]  ⚠️  Conflicts detected in {branch_name}[/red]")
+                if conflict_files:
+                    for f in conflict_files[:3]:  # Show first 3
+                        console.print(f"     [red]•[/red] {f}")
+                    if len(conflict_files) > 3:
+                        console.print(f"     [dim]... and {len(conflict_files) - 3} more[/dim]")
+                skipped_branches.append(branch_name)
+                continue
 
         try:
             # Push to remote
@@ -180,6 +221,11 @@ def _push_merge_request_strategy(
 
         except Exception as e:
             console.print(f"[red]  ❌ Error: {e}[/red]")
+
+    # Show skipped branches summary
+    if skipped_branches:
+        console.print(f"\n[yellow]⚠️  {len(skipped_branches)} branch(es) skipped due to conflicts[/yellow]")
+        console.print("[dim]   Resolve conflicts and push manually, or use --no-pull[/dim]")
 
     # Send push notification for all branches
     if config and pushed_branches:
@@ -275,7 +321,9 @@ def _push_current_branch(
     issue_key: Optional[str],
     push_tags: bool = True,
     trigger_ci: Optional[bool] = None,
-    wait_ci: bool = False
+    wait_ci: bool = False,
+    no_pull: bool = False,
+    force: bool = False
 ):
     """Push current branch without session."""
 
@@ -304,6 +352,13 @@ def _push_current_branch(
         pass
 
     console.print(f"[cyan]📤 Pushing current branch: {current_branch}[/cyan]")
+
+    # Sync with remote before push (unless skipped)
+    if not no_pull and not force:
+        success, conflict_files = _sync_with_remote(gitops, current_branch)
+        if not success:
+            _display_conflict_error(conflict_files, current_branch)
+            raise typer.Exit(1)
 
     # Try to extract issue key from branch name if not provided
     if not issue_key:
@@ -573,3 +628,199 @@ def _send_issue_completion_notification(config: dict, issues: List[str]):
         notification.send_message(message)
     except Exception:
         pass
+
+
+def _run_quality_check(config_manager: ConfigManager, config: dict) -> bool:
+    """
+    Run code quality check before push.
+
+    Returns:
+        True if quality check passed or disabled, False if failed
+    """
+    # Check if quality checks are enabled
+    if not config_manager.is_quality_enabled():
+        return True
+
+    threshold = config_manager.get_quality_threshold()
+    quality_config = config_manager.get_quality_config()
+    fail_on_security = quality_config.get("fail_on_security", True)
+
+    console.print("[bold cyan]🔍 Running code quality check...[/bold cyan]")
+
+    try:
+        # Try using code quality integration first
+        quality_integration = get_code_quality(config)
+
+        if quality_integration:
+            console.print(f"[dim]Using {quality_integration.name} integration[/dim]")
+            status = quality_integration.get_quality_status()
+
+            if status:
+                # Determine if passed based on integration status
+                passed = status.status in ("passed", "success")
+                score = int(status.coverage or 70) if hasattr(status, 'coverage') and status.coverage else 70
+
+                if passed:
+                    console.print(f"[green]✓ Quality check passed (score: {score})[/green]")
+                    return True
+                else:
+                    console.print(f"[red]✗ Quality check failed: {status.quality_gate_status or status.status}[/red]")
+                    _send_quality_failed_notification(config, score, threshold)
+                    return False
+        else:
+            # Use AI analysis
+            from .quality import analyze_quality, _display_result
+
+            result = analyze_quality(verbose=False)
+            score = result.get("score", 0)
+            decision = result.get("decision", "reject")
+            issues = result.get("issues", [])
+
+            # Check for critical security issues
+            if fail_on_security:
+                security_issues = [
+                    i for i in issues
+                    if i.get("severity", "").lower() in ("critical", "high")
+                    and i.get("type", "").lower() == "security"
+                ]
+                if security_issues:
+                    console.print(f"[red]✗ Critical security issues found![/red]")
+                    _display_result(result, threshold)
+                    _send_quality_failed_notification(config, score, threshold)
+                    return False
+
+            # Check threshold
+            if score >= threshold and decision == "approve":
+                console.print(f"[green]✓ Quality check passed (score: {score}/{threshold})[/green]")
+                return True
+            else:
+                console.print(f"[red]✗ Quality check failed (score: {score}/{threshold})[/red]")
+                _display_result(result, threshold)
+                _send_quality_failed_notification(config, score, threshold)
+                return False
+
+    except FileNotFoundError as e:
+        # LLM not configured - skip quality check with warning
+        console.print(f"[yellow]⚠️  Quality check skipped: {e}[/yellow]")
+        return True
+    except Exception as e:
+        # Other errors - skip quality check with warning
+        console.print(f"[yellow]⚠️  Quality check error: {e}[/yellow]")
+        return True
+
+    return True
+
+
+def _send_quality_failed_notification(config: dict, score: int, threshold: int):
+    """Send notification about failed quality check."""
+    if not _is_notification_enabled(config, "quality_failed"):
+        return
+
+    notification = get_notification(config)
+    if not notification or not notification.enabled:
+        return
+
+    try:
+        message = f"⚠️ Code quality check failed\nScore: {score}/{threshold}"
+        notification.send_message(message)
+    except Exception:
+        pass
+
+
+def _sync_with_remote(gitops: GitOps, branch: str) -> tuple:
+    """
+    Sync with remote and check for conflicts.
+
+    Returns:
+        (success: bool, conflict_files: list)
+        - success=True: Pull successful or not needed
+        - success=False: Conflict detected, conflict_files list returned
+    """
+    import git
+
+    # 1. Check if remote branch exists
+    try:
+        result = gitops.repo.git.ls_remote("--heads", "origin", branch)
+        if not result.strip():
+            # Remote branch doesn't exist, continue with push
+            return True, []
+    except Exception:
+        # No remote or error, continue with push
+        return True, []
+
+    # 2. Fetch from remote
+    console.print("[dim]🔄 Syncing with remote...[/dim]")
+    try:
+        gitops.repo.git.fetch("origin", branch)
+    except Exception as e:
+        console.print(f"[yellow]   ⚠️  Could not fetch from remote: {e}[/yellow]")
+        return True, []  # Continue anyway
+
+    # 3. Check if we're behind
+    try:
+        behind = gitops.repo.git.rev_list("--count", f"HEAD..origin/{branch}")
+        behind_count = int(behind.strip()) if behind.strip() else 0
+    except Exception:
+        behind_count = 0
+
+    if behind_count == 0:
+        console.print(f"[green]   ✓ Up to date with origin/{branch}[/green]")
+        return True, []
+
+    console.print(f"[dim]   Remote has {behind_count} new commit(s), attempting merge...[/dim]")
+
+    # 4. Try to merge (no commit, to test for conflicts)
+    try:
+        gitops.repo.git.merge(f"origin/{branch}", "--no-commit", "--no-ff")
+        # Merge successful, commit it
+        gitops.repo.git.commit("-m", f"Merge remote-tracking branch 'origin/{branch}'")
+        console.print(f"[green]   ✓ Merged {behind_count} commit(s) from remote[/green]")
+        return True, []
+    except git.GitCommandError:
+        # 5. Conflict detected - get conflict files
+        conflict_files = []
+        try:
+            status = gitops.repo.git.status("--porcelain")
+            for line in status.split("\n"):
+                if line:
+                    # UU = both modified, AA = both added, DD = both deleted
+                    # DU = deleted by us, UD = deleted by them
+                    # AU = added by us, UA = added by them
+                    prefix = line[:2]
+                    if "U" in prefix or prefix == "AA" or prefix == "DD":
+                        conflict_files.append(line[3:].strip())
+        except Exception:
+            pass
+
+        # 6. Abort merge to restore clean state
+        try:
+            gitops.repo.git.merge("--abort")
+        except Exception:
+            try:
+                gitops.repo.git.reset("--hard", "HEAD")
+            except Exception:
+                pass
+
+        return False, conflict_files
+
+
+def _display_conflict_error(conflict_files: List[str], branch: str):
+    """Display conflict error message with helpful options."""
+    console.print("\n[red bold]⚠️  Conflicts detected![/red bold]")
+    console.print("")
+
+    if conflict_files:
+        console.print("[bold]   Conflicting files:[/bold]")
+        for f in conflict_files:
+            console.print(f"   [red]•[/red] {f}")
+        console.print("")
+
+    console.print(f"[red]❌ Push blocked: Please resolve conflicts first[/red]")
+    console.print("")
+    console.print("[bold]💡 Options:[/bold]")
+    console.print(f"   1. Resolve conflicts manually:")
+    console.print(f"      [dim]git pull origin {branch}[/dim]")
+    console.print(f"      [dim]# Fix conflicts in files[/dim]")
+    console.print(f"      [dim]git add . && git commit[/dim]")
+    console.print(f"   2. Skip sync check: [cyan]rg push --no-pull[/cyan]")
+    console.print(f"   3. Force push (caution!): [cyan]rg push --force[/cyan]")
