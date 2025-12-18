@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "redgit"
-version = "1.1.4"
+version = "1.2.0"
 description = "AI-powered Git workflow assistant with task management integration"
 readme = "README.md"
 license = "MIT"
@@ -55,5 +55,5 @@ include = ["redgit*"]
 redgit = [
     "core/*.json",
     "integrations/*.json",
-    "prompts/*.md"
+    "prompts/**/*.md"
 ]
