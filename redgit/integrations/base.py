@@ -242,6 +242,65 @@ class IntegrationBase(ABC):
         """
         return config_values
 
+    @classmethod
+    def get_prompts(cls) -> Dict[str, Dict[str, Any]]:
+        """
+        Get exportable prompts for this integration.
+
+        Override this to provide custom prompts that users can export and customize.
+        The response schema/format sections should NOT be included - RedGit manages those.
+
+        Returns:
+            Dict mapping prompt names to prompt definitions:
+            {
+                "prompt_name": {
+                    "description": "What this prompt does",
+                    "content": "The actual prompt template content...",
+                    "variables": ["VAR1", "VAR2"],  # Variables that will be replaced
+                }
+            }
+
+        Example:
+            @classmethod
+            def get_prompts(cls) -> Dict[str, Dict[str, Any]]:
+                return {
+                    "issue_title": {
+                        "description": "Generate issue titles from code changes",
+                        "content": "Generate a title for this change...\\n{{FILES}}",
+                        "variables": ["FILES", "ISSUE_LANGUAGE"]
+                    }
+                }
+        """
+        return {}
+
+    @classmethod
+    def get_prompt(cls, name: str) -> Optional[str]:
+        """
+        Get a specific prompt by name.
+
+        First checks for user-customized version in .redgit/templates/,
+        then falls back to built-in prompt.
+
+        Args:
+            name: Prompt name (without .md extension)
+
+        Returns:
+            Prompt content or None if not found
+        """
+        from ..core.config import RETGIT_DIR
+
+        # Check for user-customized prompt first
+        custom_path = RETGIT_DIR / "templates" / f"{cls.name}_{name}.md"
+        if custom_path.exists():
+            return custom_path.read_text(encoding="utf-8")
+
+        # Fall back to built-in prompt
+        prompts = cls.get_prompts()
+        if name in prompts:
+            return prompts[name].get("content")
+
+        return None
+
 
 class TaskManagementBase(IntegrationBase):
     """
@@ -249,12 +308,244 @@ class TaskManagementBase(IntegrationBase):
 
     All task management integrations (Jira, Linear, Asana, etc.)
     must implement these methods to work with redgit.
+
+    Prompt System:
+    - Each integration can have its own prompts for generating task titles/descriptions
+    - Prompts are loaded from:
+      1. User exported: .redgit/prompts/integrations/{integration_name}/
+      2. Built-in: redgit/integrations/{integration_name}/prompts/
+    - Available prompts: issue_title.md, issue_description.md
     """
 
     integration_type = IntegrationType.TASK_MANAGEMENT
 
     # Project/workspace identifier
     project_key: str = ""
+
+    # Language for generated content (e.g., "tr", "en", "de")
+    issue_language: str = "en"
+
+    def has_user_prompt(self, prompt_name: str) -> bool:
+        """
+        Check if user has exported a custom prompt for this integration.
+
+        Args:
+            prompt_name: Name of the prompt (e.g., "issue_title", "issue_description")
+
+        Returns:
+            True if user has a custom prompt file
+        """
+        from pathlib import Path
+        from ..core.config import RETGIT_DIR
+
+        user_prompt_path = RETGIT_DIR / "prompts" / "integrations" / self.name / f"{prompt_name}.md"
+        return user_prompt_path.exists()
+
+    def get_user_prompt(self, prompt_name: str) -> Optional[str]:
+        """
+        Get ONLY user-exported prompt (not built-in fallback).
+
+        Args:
+            prompt_name: Name of the prompt (e.g., "issue_title", "issue_description")
+
+        Returns:
+            User's custom prompt string or None if not exported
+        """
+        from pathlib import Path
+        from ..core.config import RETGIT_DIR
+
+        user_prompt_path = RETGIT_DIR / "prompts" / "integrations" / self.name / f"{prompt_name}.md"
+        if user_prompt_path.exists():
+            return user_prompt_path.read_text(encoding='utf-8')
+        return None
+
+    def get_prompt(self, prompt_name: str) -> Optional[str]:
+        """
+        Get a prompt template for this integration.
+
+        Looks for prompts in order:
+        1. User exported: .redgit/prompts/integrations/{name}/{prompt_name}.md
+        2. Built-in: (integration's own prompts directory)
+
+        Args:
+            prompt_name: Name of the prompt (e.g., "issue_title", "issue_description")
+
+        Returns:
+            Prompt template string or None if not found
+        """
+        # User exported prompts first
+        user_prompt = self.get_user_prompt(prompt_name)
+        if user_prompt:
+            return user_prompt
+
+        # Built-in prompts (integration can override this)
+        builtin_prompt = self._get_builtin_prompt(prompt_name)
+        if builtin_prompt:
+            return builtin_prompt
+
+        return None
+
+    def _get_builtin_prompt(self, prompt_name: str) -> Optional[str]:
+        """
+        Get built-in prompt for this integration.
+        Override in subclasses to provide integration-specific prompts.
+        """
+        # Default prompts
+        default_prompts = {
+            "issue_title": """Generate a clear, concise issue title for a task management system.
+
+## Context
+- Commit title: {commit_title}
+- Files changed: {file_count}
+
+## Requirements
+- Title should be clear and actionable
+- Language: {language}
+- Max 100 characters
+
+## Response
+Return ONLY the issue title text, nothing else.
+""",
+            "issue_description": """Generate a detailed issue description for a task management system.
+
+## Context
+- Commit title: {commit_title}
+- Commit body: {commit_body}
+- Files changed:
+{files}
+
+## Code Changes (Diff)
+```diff
+{diff}
+```
+
+## Requirements
+- Description should explain what was changed and why
+- Use bullet points for clarity
+- Language: {language}
+- Include technical details relevant to developers
+
+## Response
+Return ONLY the issue description text, nothing else.
+"""
+        }
+        return default_prompts.get(prompt_name)
+
+    def generate_issue_content(
+        self,
+        commit_info: dict,
+        diff: str = "",
+        llm_client=None
+    ) -> dict:
+        """
+        Generate issue title and description using integration prompts and LLM.
+
+        Args:
+            commit_info: Dict with commit_title, commit_body, files
+            diff: Git diff of the changes
+            llm_client: LLM client instance (optional, will create if not provided)
+
+        Returns:
+            Dict with 'title' and 'description' keys
+        """
+        result = {
+            "title": commit_info.get("commit_title", "")[:100],
+            "description": commit_info.get("commit_body", "")
+        }
+
+        # Get language name
+        lang_names = {
+            "tr": "Turkish",
+            "en": "English",
+            "de": "German",
+            "fr": "French",
+            "es": "Spanish",
+            "pt": "Portuguese",
+            "it": "Italian",
+            "ru": "Russian",
+            "zh": "Chinese",
+            "ja": "Japanese",
+            "ko": "Korean"
+        }
+        language = lang_names.get(self.issue_language, self.issue_language)
+
+        # If no LLM client, return defaults
+        if not llm_client:
+            return result
+
+        files = commit_info.get("files", [])
+        file_list = "\n".join(f"- {f}" for f in files[:20])
+        if len(files) > 20:
+            file_list += f"\n... and {len(files) - 20} more"
+
+        # Generate title
+        title_prompt = self.get_prompt("issue_title")
+        if title_prompt:
+            try:
+                formatted_prompt = title_prompt.format(
+                    commit_title=commit_info.get("commit_title", ""),
+                    file_count=len(files),
+                    language=language
+                )
+                generated_title = llm_client.chat(formatted_prompt)
+                if generated_title:
+                    result["title"] = generated_title.strip()[:100]
+            except Exception:
+                pass
+
+        # Generate description
+        desc_prompt = self.get_prompt("issue_description")
+        if desc_prompt:
+            try:
+                # Truncate diff if too long
+                truncated_diff = diff[:5000] if diff else ""
+                if len(diff) > 5000:
+                    truncated_diff += "\n... (diff truncated)"
+
+                formatted_prompt = desc_prompt.format(
+                    commit_title=commit_info.get("commit_title", ""),
+                    commit_body=commit_info.get("commit_body", ""),
+                    files=file_list,
+                    diff=truncated_diff,
+                    language=language
+                )
+                generated_desc = llm_client.chat(formatted_prompt)
+                if generated_desc:
+                    result["description"] = generated_desc.strip()
+            except Exception:
+                pass
+
+        return result
+
+    def export_prompts(self, target_dir: str = None) -> List[str]:
+        """
+        Export integration prompts to user's .redgit/prompts/integrations/{name}/ directory.
+
+        Args:
+            target_dir: Optional target directory (defaults to .redgit/prompts/integrations/{name}/)
+
+        Returns:
+            List of exported file paths
+        """
+        from pathlib import Path
+        from ..core.config import RETGIT_DIR
+
+        if target_dir:
+            prompts_dir = Path(target_dir)
+        else:
+            prompts_dir = RETGIT_DIR / "prompts" / "integrations" / self.name
+
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+
+        exported = []
+        for prompt_name in ["issue_title", "issue_description"]:
+            content = self._get_builtin_prompt(prompt_name)
+            if content:
+                file_path = prompts_dir / f"{prompt_name}.md"
+                file_path.write_text(content, encoding='utf-8')
+                exported.append(str(file_path))
+
+        return exported
 
     @abstractmethod
     def get_my_active_issues(self) -> List[Issue]:
