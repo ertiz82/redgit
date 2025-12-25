@@ -273,19 +273,33 @@ def get_plugin_shortcuts(name: str) -> Dict[str, Any]:
         name: Plugin name
 
     Returns:
-        Dict of shortcut_name -> command_function
+        Dict of shortcut_name -> command_function or typer_app
     """
     shortcuts = {}
+
+    def extract_shortcuts(module):
+        """Extract shortcuts from a module."""
+        import typer
+        for attr_name in dir(module):
+            # Skip the main plugin app (e.g., version_app for version plugin)
+            if attr_name == f"{name}_app":
+                continue
+            # Check for shortcut functions
+            if attr_name.endswith("_shortcut"):
+                shortcut_name = attr_name.replace("_shortcut", "")
+                shortcuts[shortcut_name] = getattr(module, attr_name)
+            # Check for shortcut Typer apps (e.g., release_app -> rg release)
+            elif attr_name.endswith("_app"):
+                attr = getattr(module, attr_name)
+                if isinstance(attr, typer.Typer):
+                    shortcut_name = attr_name.replace("_app", "")
+                    shortcuts[shortcut_name] = attr
 
     # Try builtin
     try:
         module_name = f"redgit.plugins.{name}.commands"
         module = importlib.import_module(module_name)
-
-        for attr_name in dir(module):
-            if attr_name.endswith("_shortcut"):
-                shortcut_name = attr_name.replace("_shortcut", "")
-                shortcuts[shortcut_name] = getattr(module, attr_name)
+        extract_shortcuts(module)
     except ImportError:
         pass
 
@@ -300,11 +314,7 @@ def get_plugin_shortcuts(name: str) -> Dict[str, Any]:
             if spec and spec.loader:
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-
-                for attr_name in dir(module):
-                    if attr_name.endswith("_shortcut"):
-                        shortcut_name = attr_name.replace("_shortcut", "")
-                        shortcuts[shortcut_name] = getattr(module, attr_name)
+                extract_shortcuts(module)
         except Exception:
             pass
 
