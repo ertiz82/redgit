@@ -75,10 +75,16 @@ def _load_plugin_commands():
         for name, cmd_app in commands.items():
             app.add_typer(cmd_app, name=name)
 
-        # Load plugin shortcuts (e.g., release_shortcut -> rg release)
+        # Load plugin shortcuts (e.g., release_shortcut -> rg release, release_app -> rg release)
+        import typer
         shortcuts = get_all_plugin_shortcuts(config)
-        for name, cmd_func in shortcuts.items():
-            app.command(name)(cmd_func)
+        for name, cmd in shortcuts.items():
+            if isinstance(cmd, typer.Typer):
+                # Typer app shortcut (e.g., release_app -> rg release with subcommands)
+                app.add_typer(cmd, name=name)
+            else:
+                # Function shortcut (e.g., release_shortcut -> rg release)
+                app.command(name)(cmd)
 
     except Exception:
         # Silently fail if config not found (e.g., before init)
