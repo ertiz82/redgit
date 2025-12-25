@@ -396,7 +396,7 @@ class PromptManager:
             status = change.get("status", "M")
 
             # Status description
-            status_map = {"M": "modified", "U": "untracked", "A": "added", "D": "deleted"}
+            status_map = {"M": "modified", "U": "untracked", "A": "added", "D": "deleted", "C": "conflict"}
             status_text = status_map.get(status, status)
 
             line = f"{i}. [{status_text}] {file_path}"
