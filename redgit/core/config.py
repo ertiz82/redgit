@@ -467,3 +467,83 @@ class StateManager:
         if "session" in state:
             del state["session"]
         self.save(state)
+
+    def set_subtask_session(
+        self,
+        parent_branch: str,
+        parent_task: str,
+        subtasks: list,
+        subtask_branches: list
+    ):
+        """
+        Set subtask mode session data.
+
+        Args:
+            parent_branch: Parent task branch name
+            parent_task: Parent task key (e.g., SCRUM-858)
+            subtasks: List of created subtask keys
+            subtask_branches: List of subtask branch info dicts
+        """
+        state = self.load()
+        if "session" not in state:
+            state["session"] = {
+                "base_branch": None,
+                "branches": [],
+                "issues": []
+            }
+
+        state["session"]["subtask_data"] = {
+            "subtask_mode": True,
+            "parent_branch": parent_branch,
+            "parent_task": parent_task,
+            "subtasks": subtasks,
+            "subtask_branches": subtask_branches
+        }
+        self.save(state)
+
+    def is_subtask_session(self) -> bool:
+        """Check if current session is in subtask mode."""
+        session = self.get_session()
+        if not session:
+            return False
+        return session.get("subtask_data", {}).get("subtask_mode", False)
+
+    def get_subtask_data(self) -> Optional[dict]:
+        """Get subtask session data if in subtask mode."""
+        session = self.get_session()
+        if not session:
+            return None
+        return session.get("subtask_data")
+
+    # Propose usage tracking methods
+    def add_propose_usage(self, params: List[str]):
+        """Track propose command usage pattern.
+
+        Args:
+            params: List of parameter names used (e.g., ["-t", "--subtasks"])
+        """
+        state = self.load()
+        if "propose_history" not in state:
+            state["propose_history"] = []
+        state["propose_history"].insert(0, params)
+        state["propose_history"] = state["propose_history"][:5]
+        self.save(state)
+
+    def get_propose_usage_history(self) -> List[List[str]]:
+        """Get last 5 propose command usage patterns."""
+        state = self.load()
+        return state.get("propose_history", [])
+
+    def get_common_propose_pattern(self) -> Optional[List[str]]:
+        """Get common pattern if last 5 usages are identical.
+
+        Returns:
+            List of parameter names if all 5 are the same, None otherwise.
+        """
+        history = self.get_propose_usage_history()
+        if len(history) < 5:
+            return None
+        first_pattern = history[0]
+        if all(p == first_pattern for p in history[:5]):
+            return first_pattern
+        return None

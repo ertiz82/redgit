@@ -60,10 +60,47 @@ class GitOps:
             include_excluded: If True, include sensitive/excluded files (not recommended)
 
         Returns:
-            List of {"file": path, "status": "U"|"M"|"A"|"D"} dicts
+            List of {"file": path, "status": "U"|"M"|"A"|"D"|"C"} dicts
+            C = Conflict (unmerged)
         """
         changes = []
         seen = set()
+
+        # First, check for merge conflicts (unmerged files)
+        # These need special handling as they don't appear in normal diffs
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                cwd=self.repo.working_dir
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split("\n"):
+                    if not line:
+                        continue
+                    # Porcelain format: XY filename
+                    # X = index status, Y = worktree status
+                    # Unmerged statuses: DD, AU, UD, UA, DU, AA, UU
+                    if len(line) >= 3:
+                        xy = line[:2]
+                        filepath = line[3:].strip()
+                        # Handle renamed files (old -> new format)
+                        if " -> " in filepath:
+                            filepath = filepath.split(" -> ")[-1]
+                        # Check for unmerged (conflict) statuses
+                        if xy in ("DD", "AU", "UD", "UA", "DU", "AA", "UU"):
+                            if filepath not in seen:
+                                seen.add(filepath)
+                                if include_excluded or not is_excluded(filepath):
+                                    # For "deleted by them" (UD) or "deleted by us" (DU),
+                                    # mark as deleted if we want to accept the deletion
+                                    if xy in ("UD", "DU", "DD"):
+                                        changes.append({"file": filepath, "status": "D", "conflict": True})
+                                    else:
+                                        changes.append({"file": filepath, "status": "C", "conflict": True})
+        except Exception:
+            pass
 
         # Untracked files (new files not yet added to git)
         for f in self.repo.untracked_files:
@@ -246,15 +283,27 @@ class GitOps:
         # Get current changes to check for deleted files
         current_changes = {c["file"]: c["status"] for c in self.get_changes()}
 
+        # Get git root directory for resolving relative paths
+        git_root = Path(self.repo.working_dir)
+
         safe_files = []
         deleted_files = []
         for f in files:
             if is_excluded(f):
                 continue
             # Check if file is deleted (either in git status or doesn't exist)
-            if current_changes.get(f) == "D" or (f in current_changes and not Path(f).exists()):
+            # Use git root to resolve paths correctly when running from subdirectory
+            file_path = git_root / f
+            status = current_changes.get(f)
+
+            if status == "D":
+                # Explicitly marked as deleted in git status
                 deleted_files.append(f)
-            elif Path(f).exists():
+            elif not file_path.exists():
+                # File doesn't exist - treat as deleted (even if not in current_changes)
+                deleted_files.append(f)
+            elif file_path.exists():
+                # File exists - add to safe files
                 safe_files.append(f)
 
         if not safe_files and not deleted_files:
@@ -309,16 +358,20 @@ class GitOps:
                 except Exception:
                     pass
 
-            # 5b. Stage deleted files (git rm)
+            # 5b. Stage deleted files using git add -A (handles all deletion cases)
             for f in deleted_files:
                 try:
-                    self.repo.index.remove([f], working_tree=False)
+                    # git add -A stages deletions properly
+                    self.repo.git.add("-A", "--", f)
                 except Exception:
-                    # Try git rm directly
+                    # Fallback: try git rm
                     try:
-                        self.repo.git.rm("--cached", f)
+                        self.repo.index.remove([f], working_tree=False)
                     except Exception:
-                        pass
+                        try:
+                            self.repo.git.rm("--cached", f)
+                        except Exception:
+                            pass
 
             # 6. Commit
             self.repo.index.commit(message)
@@ -438,14 +491,18 @@ class GitOps:
         staged = []
         excluded = []
 
+        # Get git root directory for resolving relative paths
+        git_root = Path(self.repo.working_dir)
+
         for f in files:
             # Skip excluded files - NEVER stage them
             if is_excluded(f):
                 excluded.append(f)
                 continue
 
-            # Only stage if file exists
-            if Path(f).exists():
+            # Check if file exists relative to git root (not current directory)
+            file_path = git_root / f
+            if file_path.exists():
                 self.repo.index.add([f])
                 staged.append(f)
 
@@ -527,4 +584,322 @@ class GitOps:
             return True
 
         except Exception as e:
+            raise e
+
+    def remote_branch_exists(self, branch_name: str, remote: str = "origin") -> bool:
+        """
+        Check if a branch exists on the remote.
+
+        Args:
+            branch_name: Name of the branch to check
+            remote: Remote name (default: "origin")
+
+        Returns:
+            True if branch exists on remote, False otherwise
+        """
+        try:
+            result = self.repo.git.ls_remote("--heads", remote, branch_name)
+            return bool(result.strip())
+        except Exception:
+            return False
+
+    def checkout_or_create_branch(
+        self,
+        branch_name: str,
+        from_branch: str = None,
+        pull_if_exists: bool = True
+    ) -> tuple:
+        """
+        Checkout existing branch (pulling from remote if exists) or create new one.
+
+        Args:
+            branch_name: Name of the branch
+            from_branch: Base branch to create from (if creating new)
+            pull_if_exists: Whether to pull from remote if branch exists
+
+        Returns:
+            (success: bool, is_new: bool, error_message: str or None)
+        """
+        # Stash current changes first
+        stash_created = False
+        try:
+            self.repo.git.stash("push", "-u", "-m", f"redgit-checkout-{branch_name}")
+            stash_created = True
+        except Exception:
+            pass
+
+        try:
+            # Check if branch exists on remote
+            if self.remote_branch_exists(branch_name):
+                # Fetch the branch
+                try:
+                    self.repo.git.fetch("origin", branch_name)
+                except Exception:
+                    pass
+
+                # Try to checkout (might exist locally already)
+                try:
+                    self.repo.git.checkout(branch_name)
+                except Exception:
+                    # Branch doesn't exist locally, create tracking branch
+                    try:
+                        self.repo.git.checkout("-b", branch_name, f"origin/{branch_name}")
+                    except Exception as e:
+                        if stash_created:
+                            try:
+                                self.repo.git.stash("pop")
+                            except Exception:
+                                pass
+                        return False, False, f"Failed to checkout remote branch: {e}"
+
+                # Pull latest changes
+                if pull_if_exists:
+                    try:
+                        self.repo.git.pull("origin", branch_name)
+                    except Exception as e:
+                        # Pop stash before returning error
+                        if stash_created:
+                            try:
+                                self.repo.git.stash("pop")
+                            except Exception:
+                                pass
+                        return False, False, f"Pull failed (possible conflict): {e}"
+
+                # Pop stash
+                if stash_created:
+                    try:
+                        self.repo.git.stash("pop")
+                    except Exception:
+                        pass
+                return True, False, None
+
+            # Check if branch exists locally
+            local_branches = [b.name for b in self.repo.branches]
+            if branch_name in local_branches:
+                self.repo.git.checkout(branch_name)
+                if stash_created:
+                    try:
+                        self.repo.git.stash("pop")
+                    except Exception:
+                        pass
+                return True, False, None
+
+            # Create new branch
+            base = from_branch or self.original_branch
+            self.repo.git.checkout("-b", branch_name, base)
+
+            if stash_created:
+                try:
+                    self.repo.git.stash("pop")
+                except Exception:
+                    pass
+            return True, True, None
+
+        except Exception as e:
+            # Recovery - try to go back
+            try:
+                if stash_created:
+                    self.repo.git.stash("pop")
+            except Exception:
+                pass
+            return False, False, str(e)
+
+    def merge_branch(
+        self,
+        source_branch: str,
+        target_branch: str,
+        delete_source: bool = True,
+        no_ff: bool = True
+    ) -> tuple:
+        """
+        Merge source branch into target branch.
+
+        Args:
+            source_branch: Branch to merge from
+            target_branch: Branch to merge into
+            delete_source: Delete source branch after merge
+            no_ff: Use --no-ff for merge (creates merge commit)
+
+        Returns:
+            (success: bool, error_message: str or None)
+        """
+        try:
+            # Checkout target
+            self.repo.git.checkout(target_branch)
+
+            # Merge source
+            if no_ff:
+                try:
+                    self.repo.git.merge(source_branch, "--no-ff", "-m", f"Merge {source_branch}")
+                except Exception:
+                    # Try fast-forward merge
+                    self.repo.git.merge(source_branch)
+            else:
+                self.repo.git.merge(source_branch)
+
+            # Delete source if requested
+            if delete_source:
+                try:
+                    self.repo.git.branch("-d", source_branch)
+                except Exception:
+                    # Force delete if needed
+                    try:
+                        self.repo.git.branch("-D", source_branch)
+                    except Exception:
+                        pass
+
+            return True, None
+
+        except Exception as e:
+            # Try to abort merge if in conflict state
+            try:
+                self.repo.git.merge("--abort")
+            except Exception:
+                pass
+            return False, str(e)
+
+    def create_subtask_branch_and_commit(
+        self,
+        subtask_branch: str,
+        parent_branch: str,
+        files: List[str],
+        message: str
+    ) -> bool:
+        """
+        Create a subtask branch from parent, commit files, merge back to parent.
+
+        This is used for subtask mode where subtask branches are created from
+        the parent task branch and merged back to it.
+
+        Args:
+            subtask_branch: Name of the subtask branch
+            parent_branch: Parent branch to branch from and merge back to
+            files: List of files to commit
+            message: Commit message
+
+        Returns:
+            True if successful (committed and merged)
+        """
+        # Filter out excluded files (but keep deleted files)
+        current_changes = {c["file"]: c["status"] for c in self.get_changes()}
+        git_root = Path(self.repo.working_dir)
+
+        safe_files = []
+        deleted_files = []
+        for f in files:
+            if is_excluded(f):
+                continue
+            file_path = git_root / f
+            status = current_changes.get(f)
+
+            if status == "D":
+                deleted_files.append(f)
+            elif not file_path.exists():
+                deleted_files.append(f)
+            elif file_path.exists():
+                safe_files.append(f)
+
+        if not safe_files and not deleted_files:
+            return False
+
+        actual_branch_name = subtask_branch
+
+        try:
+            # 1. Stash all changes (including untracked)
+            stash_created = False
+            try:
+                self.repo.git.stash("push", "-u", "-m", f"redgit-subtask-{subtask_branch}")
+                stash_created = True
+            except Exception:
+                pass
+
+            # 2. Create and checkout subtask branch from parent
+            try:
+                self.repo.git.checkout("-b", subtask_branch, parent_branch)
+            except Exception:
+                # Branch might exist, try checkout
+                try:
+                    self.repo.git.checkout(subtask_branch)
+                except Exception:
+                    # Try with suffix
+                    actual_branch_name = f"{subtask_branch}-v2"
+                    self.repo.git.checkout("-b", actual_branch_name, parent_branch)
+
+            # 3. Pop stash to get files back
+            if stash_created:
+                try:
+                    self.repo.git.stash("pop")
+                except Exception:
+                    pass
+
+            # 4. Reset index (unstage everything)
+            try:
+                self.repo.git.reset("HEAD")
+            except Exception:
+                pass
+
+            # 5. Stage only the specific files
+            for f in safe_files:
+                try:
+                    self.repo.index.add([f])
+                except Exception:
+                    pass
+
+            # 5b. Stage deleted files
+            for f in deleted_files:
+                try:
+                    self.repo.git.add("-A", "--", f)
+                except Exception:
+                    try:
+                        self.repo.index.remove([f], working_tree=False)
+                    except Exception:
+                        pass
+
+            # 6. Commit
+            self.repo.index.commit(message)
+
+            # 7. Stash remaining changes before switching
+            remaining_stashed = False
+            try:
+                self.repo.git.stash("push", "-u", "-m", f"redgit-remaining-{subtask_branch}")
+                remaining_stashed = True
+            except Exception:
+                pass
+
+            # 8. Checkout parent branch
+            self.repo.git.checkout(parent_branch)
+
+            # 9. Merge subtask branch
+            try:
+                self.repo.git.merge(actual_branch_name, "--no-ff", "-m", f"Merge {actual_branch_name}")
+            except Exception:
+                # Fast-forward merge
+                self.repo.git.merge(actual_branch_name)
+
+            # 10. Delete subtask branch (it's merged now)
+            try:
+                self.repo.git.branch("-d", actual_branch_name)
+            except Exception:
+                pass
+
+            # 11. Pop remaining stash
+            if remaining_stashed:
+                try:
+                    self.repo.git.stash("pop")
+                except Exception:
+                    pass
+
+            return True
+
+        except Exception as e:
+            # Try to recover - go back to parent branch
+            try:
+                self.repo.git.checkout(parent_branch)
+            except Exception:
+                pass
+            # Try to pop any stash
+            try:
+                self.repo.git.stash("pop")
+            except Exception:
+                pass
             raise e
