@@ -236,7 +236,7 @@ def configure_integration(name: str):
 
     # Collect field values (overrides defaults)
     for field in schema.get("fields", []):
-        value = _prompt_field(field)
+        value = _prompt_field(field, config_values)
         if value is not None:
             field_key = field.get("key") or field.get("name") or ""
             config_values[field_key] = value
@@ -300,8 +300,11 @@ def _get_field_key(field: dict) -> str:
     return field.get("key") or field.get("name") or ""
 
 
-def _prompt_field(field: dict):
+def _prompt_field(field: dict, config_values: dict = None):
     """Prompt user for a field value"""
+    if config_values is None:
+        config_values = {}
+
     key = _get_field_key(field)
     prompt_text = field.get("prompt") or field.get("label") or key
     field_type = field.get("type", "text")
@@ -312,6 +315,29 @@ def _prompt_field(field: dict):
     required = field.get("required", False)
     help_text = field.get("help") or field.get("description")
     env_var = field.get("env_var")
+    pre_prompt = field.get("pre_prompt", [])
+    dynamic_help_url = field.get("dynamic_help_url")
+
+    # Show pre_prompt instructions if available
+    if pre_prompt:
+        typer.echo("")
+        for line in pre_prompt:
+            # Replace placeholders with previously collected values
+            for k, v in config_values.items():
+                if v:
+                    line = line.replace(f"{{{k}}}", str(v))
+                    line = line.replace(f"BOT_TOKEN", str(v)) if k == "bot_token" else line
+            typer.echo(f"   {line}")
+        typer.echo("")
+
+    # Show dynamic help URL with substituted values
+    if dynamic_help_url:
+        url = dynamic_help_url
+        for k, v in config_values.items():
+            if v:
+                url = url.replace(f"{{{k}}}", str(v))
+        typer.echo(f"   🔗 {url}")
+        typer.echo("")
 
     # Show help text if available
     if help_text:
@@ -330,7 +356,7 @@ def _prompt_field(field: dict):
             value = typer.prompt(f"   {prompt_text} (optional)", default="")
         return value if value else None
 
-    elif field_type == "secret":
+    elif field_type in ("secret", "password"):
         if required:
             value = typer.prompt(f"   {prompt_text}", hide_input=True)
         else:
@@ -338,14 +364,18 @@ def _prompt_field(field: dict):
                                hide_input=True, default="")
         return value if value else None
 
-    elif field_type == "choice":
-        choices = field.get("choices", [])
+    elif field_type in ("choice", "select"):
+        choices = field.get("choices", []) or field.get("options", [])
         typer.echo(f"   {prompt_text}")
         for i, choice in enumerate(choices, 1):
             marker = ">" if choice == default else " "
             typer.echo(f"   {marker} [{i}] {choice}")
 
-        choice_idx = typer.prompt(f"   Select", default=str(choices.index(default) + 1) if default else "1")
+        default_idx = "1"
+        if default and default in choices:
+            default_idx = str(choices.index(default) + 1)
+
+        choice_idx = typer.prompt(f"   Select", default=default_idx)
         try:
             idx = int(choice_idx) - 1
             return choices[idx] if 0 <= idx < len(choices) else default
