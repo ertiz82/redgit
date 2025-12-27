@@ -10,9 +10,93 @@ from rich.prompt import Confirm
 from ..core.config import ConfigManager, StateManager
 from ..core.gitops import GitOps
 from ..integrations.registry import get_task_management, get_code_hosting, get_cicd, get_notification, get_code_quality
+from ..utils.logging import get_logger
+from ..utils.notifications import NotificationService
 
 console = Console()
 
+
+# =============================================================================
+# PUSH HELPER FUNCTIONS
+# =============================================================================
+
+def _display_session_branches(branches: list, strategy: str):
+    """Display session branches summary."""
+    for b in branches:
+        issue_key = b.get("issue_key", "")
+        branch_name = b.get("branch", "")
+        prefix = "✓" if strategy == "local-merge" else "•"
+        if issue_key:
+            console.print(f"  {prefix} {branch_name} → {issue_key}")
+        else:
+            console.print(f"  {prefix} {branch_name}")
+
+
+def _confirm_and_push_session(
+    session: dict,
+    branches: list,
+    issues: list,
+    base_branch: str,
+    gitops,
+    config: dict,
+    task_mgmt,
+    code_hosting,
+    create_pr: bool,
+    complete: bool,
+    no_pull: bool,
+    force: bool,
+    issue: str = None,
+    tags: bool = True
+) -> bool:
+    """Handle session-based push with confirmation."""
+    strategy = config.get("workflow", {}).get("strategy", "local-merge")
+    subtask_issues = session.get("subtask_issues", [])
+
+    if strategy == "merge-request":
+        # merge-request strategy: branches exist and need to be pushed
+        console.print(f"[cyan]📦 Session: {len(branches)} branches, {len(issues)} issues[/cyan]")
+        console.print("[dim]Branches will be pushed to remote for PR creation.[/dim]")
+        console.print("")
+        _display_session_branches(branches, strategy)
+        console.print("")
+
+        if not Confirm.ask("Push branches to remote?"):
+            return False
+
+        _push_merge_request_strategy(
+            branches, gitops, task_mgmt, code_hosting,
+            base_branch, create_pr, complete, config, no_pull, force,
+            subtask_issues=subtask_issues
+        )
+    else:
+        # local-merge strategy: branches are already merged during propose
+        console.print(f"[cyan]📦 Session: {len(branches)} commits, {len(issues)} issues[/cyan]")
+        console.print("[dim]All commits are already merged to current branch.[/dim]")
+        console.print("")
+        _display_session_branches(branches, strategy)
+        console.print("")
+
+        if not Confirm.ask("Push to remote?"):
+            return False
+
+        _push_current_branch(gitops, config, complete=False, create_pr=create_pr,
+                           issue_key=issue, push_tags=tags, no_pull=no_pull, force=force)
+
+        # Complete issues from session
+        if complete and task_mgmt and task_mgmt.enabled:
+            if subtask_issues:
+                console.print("\n[bold cyan]Completing subtask issues...[/bold cyan]")
+                _complete_issues(subtask_issues, task_mgmt)
+            elif issues:
+                console.print("\n[bold cyan]Completing issues...[/bold cyan]")
+                _complete_issues(issues, task_mgmt)
+
+    return True
+
+
+# =============================================================================
+# PUSH COMMAND
+# =============================================================================
 
 def push_cmd(
     complete: bool = typer.Option(
@@ -53,10 +137,13 @@ def push_cmd(
     )
 ):
     """Push current branch or session branches and complete issues."""
+    logger = get_logger()
+    logger.debug(f"push_cmd called with: complete={complete}, create_pr={create_pr}, force={force}")
 
     config_manager = ConfigManager()
     state_manager = StateManager()
     config = config_manager.load()
+    logger.debug("Config loaded, starting push process")
 
     # Run quality check if enabled (unless skipped)
     if not skip_quality and not force:
@@ -84,72 +171,24 @@ def push_cmd(
     task_mgmt = get_task_management(config)
     code_hosting = get_code_hosting(config)
 
-    if strategy == "merge-request":
-        # merge-request strategy: branches exist and need to be pushed
-        console.print(f"[cyan]📦 Session: {len(branches)} branches, {len(issues)} issues[/cyan]")
-        console.print("[dim]Branches will be pushed to remote for PR creation.[/dim]")
-        console.print("")
-
-        # Show branches
-        for b in branches:
-            issue_key = b.get("issue_key", "")
-            branch_name = b.get("branch", "")
-            if issue_key:
-                console.print(f"  • {branch_name} → {issue_key}")
-            else:
-                console.print(f"  • {branch_name}")
-
-        console.print("")
-
-        # Confirm
-        if not Confirm.ask("Push branches to remote?"):
-            return
-
-        # Push branches and optionally create PRs
-        # In subtask mode, pass subtask_issues for completion instead of branch issues
-        subtask_issues = session.get("subtask_issues", [])
-        _push_merge_request_strategy(
-            branches, gitops, task_mgmt, code_hosting,
-            base_branch, create_pr, complete, config, no_pull, force,
-            subtask_issues=subtask_issues
-        )
-    else:
-        # local-merge strategy: branches are already merged during propose
-        # We just need to push current branch and complete issues
-        console.print(f"[cyan]📦 Session: {len(branches)} commits, {len(issues)} issues[/cyan]")
-        console.print("[dim]All commits are already merged to current branch.[/dim]")
-        console.print("")
-
-        # Show what was committed
-        for b in branches:
-            issue_key = b.get("issue_key", "")
-            branch_name = b.get("branch", "")
-            if issue_key:
-                console.print(f"  ✓ {branch_name} → {issue_key}")
-            else:
-                console.print(f"  ✓ {branch_name}")
-
-        console.print("")
-
-        # Confirm
-        if not Confirm.ask("Push to remote?"):
-            return
-
-        # Push current branch (all commits are already here)
-        _push_current_branch(gitops, config, complete=False, create_pr=create_pr, issue_key=issue, push_tags=tags, no_pull=no_pull, force=force)
-
-        # Complete issues from session
-        # In subtask mode, only complete subtask issues (not parent task)
-        subtask_issues = session.get("subtask_issues", [])
-        if complete and task_mgmt and task_mgmt.enabled:
-            if subtask_issues:
-                # Subtask mode: only transition subtasks, not parent
-                console.print("\n[bold cyan]Completing subtask issues...[/bold cyan]")
-                _complete_issues(subtask_issues, task_mgmt)
-            elif issues:
-                # Standard mode: complete all issues
-                console.print("\n[bold cyan]Completing issues...[/bold cyan]")
-                _complete_issues(issues, task_mgmt)
+    # Handle session-based push
+    if not _confirm_and_push_session(
+        session=session,
+        branches=branches,
+        issues=issues,
+        base_branch=base_branch,
+        gitops=gitops,
+        config=config,
+        task_mgmt=task_mgmt,
+        code_hosting=code_hosting,
+        create_pr=create_pr,
+        complete=complete,
+        no_pull=no_pull,
+        force=force,
+        issue=issue,
+        tags=tags
+    ):
+        return
 
     # Clear session
     if Confirm.ask("\nClear session?", default=True):
@@ -792,90 +831,27 @@ def _trigger_cicd_pipeline(cicd, config: dict, branch: str, wait: bool = False):
 
 def _is_notification_enabled(config: dict, event: str) -> bool:
     """Check if notification is enabled for a specific event."""
-    from ..core.config import ConfigManager
-    config_manager = ConfigManager()
-    return config_manager.is_notification_enabled(event)
+    return NotificationService(config).is_enabled(event)
 
 
 def _send_ci_notification(config: dict, branch: str, status: str, url: Optional[str] = None):
     """Send notification about CI/CD pipeline result."""
-    # Check event-specific setting
-    event = "ci_success" if status == "success" else "ci_failure"
-    if not _is_notification_enabled(config, event):
-        return
-
-    notification = get_notification(config)
-    if not notification or not notification.enabled:
-        return
-
-    try:
-        if status == "success":
-            message = f"✅ Pipeline for `{branch}` completed successfully"
-        else:
-            message = f"❌ Pipeline for `{branch}` failed"
-
-        if url:
-            message += f"\n{url}"
-
-        notification.send_message(message)
-    except Exception:
-        pass  # Notification failure shouldn't break the flow
+    NotificationService(config).send_ci_result(branch, status, url)
 
 
 def _send_push_notification(config: dict, branch: str, issues: List[str] = None):
     """Send notification about successful push."""
-    if not _is_notification_enabled(config, "push"):
-        return
-
-    notification = get_notification(config)
-    if not notification or not notification.enabled:
-        return
-
-    try:
-        message = f"📤 Pushed `{branch}` to remote"
-        if issues:
-            message += f"\nIssues: {', '.join(issues)}"
-        notification.send_message(message)
-    except Exception:
-        pass
+    NotificationService(config).send_push(branch, issues)
 
 
 def _send_pr_notification(config: dict, branch: str, pr_url: str, issue_key: str = None):
     """Send notification about PR creation."""
-    if not _is_notification_enabled(config, "pr_created"):
-        return
-
-    notification = get_notification(config)
-    if not notification or not notification.enabled:
-        return
-
-    try:
-        message = f"🔀 PR created for `{branch}`"
-        if issue_key:
-            message += f" ({issue_key})"
-        message += f"\n{pr_url}"
-        notification.send_message(message)
-    except Exception:
-        pass
+    NotificationService(config).send_pr_created(branch, pr_url, issue_key)
 
 
 def _send_issue_completion_notification(config: dict, issues: List[str]):
     """Send notification about issues marked as done."""
-    if not _is_notification_enabled(config, "issue_completed"):
-        return
-
-    notification = get_notification(config)
-    if not notification or not notification.enabled:
-        return
-
-    try:
-        if len(issues) == 1:
-            message = f"✅ Issue {issues[0]} marked as Done"
-        else:
-            message = f"✅ {len(issues)} issues marked as Done: {', '.join(issues)}"
-        notification.send_message(message)
-    except Exception:
-        pass
+    NotificationService(config).send_issue_completed(issues)
 
 
 def _run_quality_check(config_manager: ConfigManager, config: dict) -> bool:
@@ -961,18 +937,7 @@ def _run_quality_check(config_manager: ConfigManager, config: dict) -> bool:
 
 def _send_quality_failed_notification(config: dict, score: int, threshold: int):
     """Send notification about failed quality check."""
-    if not _is_notification_enabled(config, "quality_failed"):
-        return
-
-    notification = get_notification(config)
-    if not notification or not notification.enabled:
-        return
-
-    try:
-        message = f"⚠️ Code quality check failed\nScore: {score}/{threshold}"
-        notification.send_message(message)
-    except Exception:
-        pass
+    NotificationService(config).send_quality_failed(score, threshold)
 
 
 def _sync_with_remote(gitops: GitOps, branch: str) -> tuple:
