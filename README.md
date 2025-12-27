@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ertiz82/redgit/main/assets/logo.svg?v=1.2.2" alt="RedGit Logo" width="400"/>
+  <img src="https://raw.githubusercontent.com/ertiz82/redgit/main/assets/logo.svg?v=1.3.0" alt="RedGit Logo" width="400"/>
 </p>
 
 <p align="center">
@@ -10,6 +10,8 @@
   <a href="https://pypi.org/project/redgit/"><img src="https://img.shields.io/pypi/v/redgit.svg" alt="PyPI version"></a>
   <a href="https://pypi.org/project/redgit/"><img src="https://img.shields.io/pypi/dm/redgit.svg" alt="Downloads"></a>
   <a href="https://pypi.org/project/redgit/"><img src="https://img.shields.io/pypi/pyversions/redgit.svg" alt="Python versions"></a>
+  <a href="https://github.com/ertiz82/redgit/actions/workflows/test.yml"><img src="https://github.com/ertiz82/redgit/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://codecov.io/gh/ertiz82/redgit"><img src="https://codecov.io/gh/ertiz82/redgit/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://github.com/ertiz82/redgit/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/ertiz82/redgit/stargazers"><img src="https://img.shields.io/github/stars/ertiz82/redgit.svg" alt="GitHub stars"></a>
 </p>
@@ -60,6 +62,7 @@ rg push      # Push and update Jira/Linear
 | **AI-Powered Grouping** | Automatically groups related file changes into logical commits |
 | **Task Management** | Integrates with Jira, Linear, Asana, Trello, and more |
 | **Smart Branching** | Creates branches based on issue keys (`feature/PROJ-123-description`) |
+| **Task-Filtered Mode** | Auto-create subtasks under parent task, detect task from branch name |
 | **Auto Transitions** | Moves issues through workflow statuses (To Do → In Progress → Done) |
 | **PR Creation** | Automatically creates pull requests with proper descriptions |
 | **Code Quality** | Built-in quality checks with ruff/flake8 + AI analysis |
@@ -137,6 +140,19 @@ rg integration install github
 # Create commits and PRs
 rg propose
 rg push --pr      # Creates pull requests automatically
+```
+
+### Task-Filtered Mode (Subtasks)
+
+```bash
+# Create subtasks under a parent task
+rg propose -t PROJ-123
+
+# Auto-detect task from branch name
+git checkout feature/PROJ-123-some-work
+rg propose  # Detects PROJ-123 automatically
+
+# AI analyzes files, creates relevant subtasks, always returns to original branch
 ```
 
 ---
