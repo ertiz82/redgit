@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ertiz82/redgit/main/assets/logo.svg?v=1.3.0" alt="RedGit Logo" width="400"/>
+  <img src="https://raw.githubusercontent.com/ertiz82/redgit/main/assets/logo.svg?v=1.3.1" alt="RedGit Logo" width="400"/>
 </p>
 
 <p align="center">
@@ -68,6 +68,8 @@ rg push      # Push and update Jira/Linear
 | **Code Quality** | Built-in quality checks with ruff/flake8 + AI analysis |
 | **Semgrep Integration** | Multi-language static analysis (35+ languages) for security & best practices |
 | **CI/CD Integration** | Trigger and monitor pipelines from the command line |
+| **Planning Poker** | Real-time sprint estimation with WebSocket, task distribution, sprint creation |
+| **Tunnel Support** | Expose local ports for webhooks and remote access (ngrok, cloudflare, etc.) |
 | **Plugin System** | Framework-specific prompts (Laravel, Django, etc.) |
 
 ---
@@ -168,6 +170,7 @@ RedGit supports 30+ integrations across different categories:
 | **CI/CD** | GitHub Actions, GitLab CI, Jenkins, CircleCI |
 | **Notifications** | Slack, Discord, Telegram, MS Teams |
 | **Code Quality** | SonarQube, Snyk, Codecov, Codacy |
+| **Tunnel** | ngrok, Cloudflare Tunnel, localtunnel, bore, serveo |
 
 Install integrations from [RedGit Tap](https://github.com/ertiz82/redgit-tap):
 
@@ -181,16 +184,30 @@ rg install sonarqube
 
 ## Documentation
 
+### Core Documentation
+
 | Section | Description |
 |---------|-------------|
 | **[Getting Started](docs/getting-started.md)** | Installation and first steps |
 | **[Commands Reference](docs/commands.md)** | All CLI commands |
 | **[Configuration](docs/configuration.md)** | Config file options |
-| **[Integrations](docs/integrations/index.md)** | Task management, code hosting, CI/CD |
-| **[Plugins](docs/plugins/index.md)** | Framework plugins and release management |
 | **[Workflows](docs/workflows.md)** | Local merge vs merge request strategies |
-| **[Custom Integrations](docs/integrations/custom.md)** | Build your own integrations |
 | **[Troubleshooting](docs/troubleshooting.md)** | Common issues and solutions |
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **[Planning Poker](docs/planning-poker.md)** | Real-time sprint estimation with WebSocket |
+| **[Tunnel](docs/tunnel.md)** | Expose local ports for remote access |
+
+### Integrations & Plugins
+
+| Section | Description |
+|---------|-------------|
+| **[Integrations](docs/integrations/index.md)** | Task management, code hosting, CI/CD, notifications |
+| **[Plugins](docs/plugins/index.md)** | Framework plugins and release management |
+| **[Custom Integrations](docs/integrations/custom.md)** | Build your own integrations |
 
 ---
 
