@@ -18,6 +18,9 @@ from redgit.commands.ci import ci_app
 from redgit.commands.config import config_app
 from redgit.commands.quality import quality_app
 from redgit.commands.scout import scout_app
+from redgit.commands.webhook import webhook_app
+from redgit.commands.tunnel import tunnel_app
+from redgit.commands.poker import poker_app
 
 
 def version_callback(value: bool):
@@ -61,6 +64,9 @@ app.add_typer(ci_app, name="ci")
 app.add_typer(config_app, name="config")
 app.add_typer(quality_app, name="quality")
 app.add_typer(scout_app, name="scout")
+app.add_typer(webhook_app, name="webhook")
+app.add_typer(tunnel_app, name="tunnel")
+app.add_typer(poker_app, name="poker")
 
 
 def _load_plugin_commands():
