@@ -7,8 +7,11 @@ Integration Types:
 - notification: Slack, Discord
 - ci_cd: GitHub Actions, GitLab CI, Jenkins, CircleCI
 - code_quality: SonarQube, CodeClimate, Snyk, Codecov
+- tunnel: Ngrok, Cloudflare Tunnel, Localtunnel
 """
 
+import os
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
@@ -22,6 +25,7 @@ class IntegrationType(Enum):
     ANALYSIS = "analysis"
     CI_CD = "ci_cd"
     CODE_QUALITY = "code_quality"
+    TUNNEL = "tunnel"
 
 
 @dataclass
@@ -659,6 +663,144 @@ Return ONLY the issue description text, nothing else.
         """Add issue to a sprint (if supported)"""
         return False
 
+    def create_sprint(
+        self,
+        name: str,
+        start_date: str = None,
+        end_date: str = None,
+        goal: str = None
+    ) -> Optional[Sprint]:
+        """
+        Create a new sprint.
+
+        Args:
+            name: Sprint name
+            start_date: Sprint start date (ISO format, optional)
+            end_date: Sprint end date (ISO format, optional)
+            goal: Sprint goal/description (optional)
+
+        Returns:
+            Sprint object if created, None otherwise.
+            Subclasses should override this method.
+        """
+        return None
+
+    def move_issues_to_sprint(
+        self,
+        sprint_id: str,
+        issue_keys: List[str]
+    ) -> Dict[str, bool]:
+        """
+        Move multiple issues to a sprint.
+
+        Args:
+            sprint_id: Target sprint ID
+            issue_keys: List of issue keys to move
+
+        Returns:
+            Dict mapping issue_key -> success status.
+            Default implementation calls add_issue_to_sprint for each.
+        """
+        results = {}
+        for issue_key in issue_keys:
+            results[issue_key] = self.add_issue_to_sprint(issue_key, sprint_id)
+        return results
+
+    def start_sprint(
+        self,
+        sprint_id: str,
+        start_date: str = None,
+        end_date: str = None
+    ) -> bool:
+        """
+        Start a sprint (change state to active).
+
+        Args:
+            sprint_id: Sprint ID to start
+            start_date: Start date override (ISO format, optional)
+            end_date: End date (ISO format, optional)
+
+        Returns:
+            True if sprint was started successfully.
+            Subclasses should override this method.
+        """
+        return False
+
+    def get_sprint_date_config(self) -> Dict[str, Any]:
+        """
+        Get sprint date configuration for this integration.
+
+        Returns:
+            Dict with:
+                - requires_dates: Whether dates are required
+                - requires_start_date: Whether start date is required
+                - requires_end_date: Whether end date is required
+                - default_duration_days: Default sprint duration in days
+                - date_format: Expected date format description
+        """
+        return {
+            "requires_dates": False,
+            "requires_start_date": False,
+            "requires_end_date": False,
+            "default_duration_days": 14,
+            "date_format": "YYYY-MM-DD"
+        }
+
+    # Optional methods for user and team management
+
+    def get_current_user(self) -> Optional[Dict[str, Any]]:
+        """
+        Get current authenticated user info.
+
+        Returns:
+            Dict with 'id', 'display_name', 'email' or None if not available.
+            Subclasses should override this method.
+        """
+        return None
+
+    def get_team_members(self, project_key: str = None) -> List[Dict[str, Any]]:
+        """
+        Get team members for a project.
+
+        Args:
+            project_key: Project identifier (uses default if not provided)
+
+        Returns:
+            List of dicts with 'id', 'display_name', 'email', 'active'.
+            Subclasses should override this method.
+        """
+        return []
+
+    def assign_issue(self, issue_key: str, account_id: str) -> bool:
+        """
+        Assign an issue to a user.
+
+        Args:
+            issue_key: Issue identifier (e.g., "PROJ-123")
+            account_id: User's account ID in the task management system
+
+        Returns:
+            True if assignment was successful, False otherwise.
+            Subclasses should override this method.
+        """
+        return False
+
+    def bulk_assign_issues(self, assignments: Dict[str, str]) -> Dict[str, bool]:
+        """
+        Bulk assign issues to users.
+
+        Args:
+            assignments: Dict mapping issue_key -> account_id
+
+        Returns:
+            Dict mapping issue_key -> success status.
+            Default implementation calls assign_issue for each.
+        """
+        results = {}
+        for issue_key, account_id in assignments.items():
+            results[issue_key] = self.assign_issue(issue_key, account_id)
+        return results
+
 
 class CodeHostingBase(IntegrationBase):
     """
@@ -708,9 +850,38 @@ class NotificationBase(IntegrationBase):
 
     All notification integrations must implement the standard notify() method
     so other integrations can send notifications through them.
+
+    Capability Flags (override in subclass):
+        supports_buttons: Can send messages with inline buttons
+        supports_polls: Can send polls/surveys
+        supports_threads: Can reply in threads
+        supports_reactions: Can add emoji reactions
+        supports_webhooks: Can receive callback webhooks
     """
 
     integration_type = IntegrationType.NOTIFICATION
+
+    # Capability flags - subclasses should override these
+    supports_buttons: bool = False
+    supports_polls: bool = False
+    supports_threads: bool = False
+    supports_reactions: bool = False
+    supports_webhooks: bool = False
+
+    def get_capabilities(self) -> Dict[str, bool]:
+        """
+        Get the capabilities of this notification integration.
+
+        Returns:
+            Dict of capability flags
+        """
+        return {
+            "buttons": self.supports_buttons,
+            "polls": self.supports_polls,
+            "threads": self.supports_threads,
+            "reactions": self.supports_reactions,
+            "webhooks": self.supports_webhooks,
+        }
 
     @abstractmethod
     def send_message(self, message: str, channel: str = None) -> bool:
@@ -856,6 +1027,84 @@ class NotificationBase(IntegrationBase):
             message=message,
             level=level
         )
+
+    # =========================================================================
+    # INTERACTIVE METHODS (v2)
+    # =========================================================================
+
+    def send_interactive(
+        self,
+        message: str,
+        buttons: List[Dict] = None,
+        channel: str = None
+    ) -> Optional[str]:
+        """
+        Send a message with interactive buttons.
+
+        Override this method in subclasses that support interactive messages.
+
+        Args:
+            message: Message text
+            buttons: List of button definitions:
+                - {"text": "Label", "action": "action_id", "data": {...}}
+                - {"text": "Label", "url": "https://..."}
+            channel: Optional channel/room override
+
+        Returns:
+            Message ID if successful, None otherwise
+        """
+        # Default: fall back to regular message
+        self.send_message(message, channel)
+        return None
+
+    def send_poll(
+        self,
+        question: str,
+        options: List[str],
+        channel: str = None
+    ) -> Optional[str]:
+        """
+        Send a poll for user voting.
+
+        Override this method in subclasses that support polls.
+
+        Args:
+            question: Poll question
+            options: List of poll options (2-10 options)
+            channel: Optional channel/room override
+
+        Returns:
+            Poll ID if successful, None otherwise
+        """
+        return None
+
+    def handle_callback(self, callback_data: dict) -> Optional[str]:
+        """
+        Handle a callback from user interaction (button click, poll answer).
+
+        Override this method in subclasses that support webhooks.
+
+        Args:
+            callback_data: Callback data from the notification platform
+
+        Returns:
+            Response message or None
+        """
+        return None
+
+    def setup_webhook(self, url: str) -> bool:
+        """
+        Configure webhook URL for receiving callbacks.
+
+        Override this method in subclasses that support webhooks.
+
+        Args:
+            url: Public webhook URL (e.g., ngrok URL)
+
+        Returns:
+            True if webhook was configured successfully
+        """
+        return False
 
 
 class AnalysisBase(IntegrationBase):
@@ -1196,6 +1445,154 @@ class CodeQualityBase(IntegrationBase):
             Comparison dict or None
         """
         return None
+
+
+class TunnelBase(IntegrationBase):
+    """
+    Base class for tunnel integrations.
+
+    Exposes local ports to the internet for webhooks, planning poker sessions, etc.
+    Supports ngrok, Cloudflare Tunnel, localtunnel, and similar services.
+    """
+
+    integration_type = IntegrationType.TUNNEL
+    _state_file = os.path.expanduser("~/.redgit/tunnel_state.json")
+
+    def _save_state(self, pid: int, url: str, port: int):
+        """Save tunnel state to file for persistence across commands."""
+        import json
+        state = {
+            "integration": self.name,
+            "pid": pid,
+            "url": url,
+            "port": port,
+            "started_at": time.time()
+        }
+        os.makedirs(os.path.dirname(self._state_file), exist_ok=True)
+        with open(self._state_file, "w") as f:
+            json.dump(state, f)
+
+    def _load_state(self) -> Optional[Dict[str, Any]]:
+        """Load tunnel state from file."""
+        import json
+        if not os.path.exists(self._state_file):
+            return None
+        try:
+            with open(self._state_file, "r") as f:
+                state = json.load(f)
+            # Verify it's for this integration
+            if state.get("integration") != self.name:
+                return None
+            return state
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def _clear_state(self):
+        """Clear saved tunnel state."""
+        if os.path.exists(self._state_file):
+            try:
+                os.remove(self._state_file)
+            except IOError:
+                pass
+
+    def _is_process_running(self, pid: int) -> bool:
+        """Check if a process with given PID is still running."""
+        try:
+            os.kill(pid, 0)
+            return True
+        except (OSError, ProcessLookupError):
+            return False
+
+    @abstractmethod
+    def start_tunnel(self, port: int, **kwargs) -> Optional[str]:
+        """
+        Start a tunnel to expose a local port to the internet.
+
+        Args:
+            port: Local port to expose
+            **kwargs: Additional options (region, subdomain, etc.)
+
+        Returns:
+            Public URL or None if failed
+        """
+        pass
+
+    @abstractmethod
+    def stop_tunnel(self) -> bool:
+        """
+        Stop the active tunnel.
+
+        Returns:
+            True if stopped successfully
+        """
+        pass
+
+    @abstractmethod
+    def get_public_url(self) -> Optional[str]:
+        """
+        Get the current public URL if tunnel is active.
+
+        Returns:
+            Public URL or None if tunnel is not running
+        """
+        pass
+
+    def is_running(self) -> bool:
+        """
+        Check if tunnel is currently running.
+
+        Returns:
+            True if tunnel is active
+        """
+        # First check in-memory state
+        url = self.get_public_url()
+        if url:
+            return True
+
+        # Check persisted state
+        state = self._load_state()
+        if state and self._is_process_running(state.get("pid", 0)):
+            return True
+
+        return False
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get detailed tunnel status.
+
+        Returns:
+            Dict with status information
+        """
+        # First check in-memory state
+        url = self.get_public_url()
+        if url:
+            return {
+                "running": True,
+                "url": url,
+                "integration": self.name
+            }
+
+        # Check persisted state
+        state = self._load_state()
+        if state:
+            pid = state.get("pid", 0)
+            if self._is_process_running(pid):
+                return {
+                    "running": True,
+                    "url": state.get("url"),
+                    "port": state.get("port"),
+                    "integration": self.name,
+                    "pid": pid
+                }
+            else:
+                # Process died, clear state
+                self._clear_state()
+
+        return {
+            "running": False,
+            "url": None,
+            "integration": self.name
+        }
 
 
 # Backward compatibility alias

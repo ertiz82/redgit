@@ -27,7 +27,8 @@ from .base import (
     NotificationBase,
     AnalysisBase,
     CICDBase,
-    CodeQualityBase
+    CodeQualityBase,
+    TunnelBase
 )
 
 from ..core.config import GLOBAL_INTEGRATIONS_DIR
@@ -187,7 +188,8 @@ def _is_valid_integration_class(cls) -> bool:
         cls is not NotificationBase and
         cls is not AnalysisBase and
         cls is not CICDBase and
-        cls is not CodeQualityBase
+        cls is not CodeQualityBase and
+        cls is not TunnelBase
     )
 
 
@@ -536,6 +538,50 @@ def get_code_quality(config: dict, active_name: Optional[str] = None) -> Optiona
     integration = load_integration_by_name(active_name, integration_config)
 
     if integration and isinstance(integration, CodeQualityBase):
+        return integration
+
+    return None
+
+
+def get_tunnel_integration(config: dict, active_name: Optional[str] = None) -> Optional[TunnelBase]:
+    """
+    Get the active tunnel integration.
+
+    Args:
+        config: Full config dict
+        active_name: Override active integration name
+
+    Returns:
+        TunnelBase instance or None
+
+    Example:
+        from redgit.integrations.registry import get_tunnel_integration
+        from redgit.core.config import ConfigManager
+
+        config = ConfigManager().load()
+        tunnel = get_tunnel_integration(config)
+
+        if tunnel:
+            # Start a tunnel
+            url = tunnel.start_tunnel(8080)
+
+            # Check status
+            if tunnel.is_running():
+                print(f"Tunnel running at: {tunnel.get_public_url()}")
+
+            # Stop the tunnel
+            tunnel.stop_tunnel()
+    """
+    if not active_name:
+        active_name = config.get("active", {}).get("tunnel")
+
+    if not active_name:
+        return None
+
+    integration_config = config.get("integrations", {}).get(active_name, {})
+    integration = load_integration_by_name(active_name, integration_config)
+
+    if integration and isinstance(integration, TunnelBase):
         return integration
 
     return None
