@@ -83,8 +83,8 @@ def _get_changed_files(commit: Optional[str] = None, branch: Optional[str] = Non
         result = subprocess.run(cmd, capture_output=True, text=True)
         files = result.stdout.strip().split("\n")
 
-        # Filter files that exist
-        files = [f for f in files if f and Path(f).exists()]
+        # Filter files that exist and exclude .redgit directory
+        files = [f for f in files if f and Path(f).exists() and not f.startswith(".redgit/")]
 
         # Filter Python files only if requested
         if python_only:
@@ -280,29 +280,37 @@ Output JSON only:
 """
 
 
+# Paths to exclude from quality analysis
+EXCLUDED_PATHS = [".redgit", ".git", ".env"]
+
+
 def _get_diff(commit: Optional[str] = None, branch: Optional[str] = None, file: Optional[str] = None) -> str:
     """Get git diff for analysis."""
+    # Build exclusion pathspecs using :(exclude) syntax
+    exclude_specs = ["--", *(f":(exclude){p}" for p in EXCLUDED_PATHS)]
+
     try:
         if commit:
             # Diff for specific commit
-            cmd = ["git", "diff", f"{commit}~1..{commit}"]
+            cmd = ["git", "diff", f"{commit}~1..{commit}"] + exclude_specs
         elif branch:
             # Diff between branch and main
             main_branch = _get_main_branch()
-            cmd = ["git", "diff", f"{main_branch}...{branch}"]
+            cmd = ["git", "diff", f"{main_branch}...{branch}"] + exclude_specs
         elif file:
             # Diff for specific file (staged or unstaged)
             cmd = ["git", "diff", "HEAD", "--", file]
         else:
             # Staged changes
-            cmd = ["git", "diff", "--staged"]
+            cmd = ["git", "diff", "--staged"] + exclude_specs
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         diff = result.stdout.strip()
 
         # If no staged changes, try unstaged
         if not diff and not commit and not branch:
-            result = subprocess.run(["git", "diff"], capture_output=True, text=True)
+            cmd = ["git", "diff"] + exclude_specs
+            result = subprocess.run(cmd, capture_output=True, text=True)
             diff = result.stdout.strip()
 
         return diff

@@ -11,7 +11,6 @@ Provides integration with Semgrep for detecting:
 import subprocess
 import json
 from typing import List, Dict, Optional, Any
-from pathlib import Path
 
 from .config import ConfigManager
 
@@ -22,6 +21,17 @@ SEVERITY_MAP = {
     "WARNING": "high",
     "INFO": "medium",
 }
+
+# Default paths to exclude from scanning
+DEFAULT_EXCLUDES = [
+    ".redgit",
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".env",
+]
 
 # Issue type mapping based on rule categories
 TYPE_MAP = {
@@ -107,10 +117,12 @@ def run_semgrep(
         for sev in severity:
             cmd.extend(["--severity", sev])
 
-    # Add excludes
+    # Add excludes (merge defaults with user-provided)
+    all_excludes = list(DEFAULT_EXCLUDES)
     if exclude:
-        for exc in exclude:
-            cmd.extend(["--exclude", exc])
+        all_excludes.extend(exclude)
+    for exc in all_excludes:
+        cmd.extend(["--exclude", exc])
 
     # Add timeout
     cmd.extend(["--timeout", str(timeout)])
@@ -195,12 +207,25 @@ def analyze_files(files: List[str]) -> Dict[str, Any]:
             "message": "Semgrep is disabled"
         }
 
+    # Filter out files in excluded directories
+    filtered_files = [
+        f for f in files
+        if not any(f.startswith(exc + "/") or f.startswith(exc + "\\") or f == exc for exc in DEFAULT_EXCLUDES)
+    ]
+
+    if not filtered_files:
+        return {
+            "success": True,
+            "results": [],
+            "stats": {"total": 0}
+        }
+
     return run_semgrep(
         configs=semgrep_config.get("configs", ["auto"]),
         severity=semgrep_config.get("severity", ["ERROR", "WARNING"]),
         exclude=semgrep_config.get("exclude", []),
         timeout=semgrep_config.get("timeout", 300),
-        files=files
+        files=filtered_files
     )
 
 
