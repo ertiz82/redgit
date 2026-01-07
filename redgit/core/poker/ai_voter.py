@@ -7,8 +7,8 @@ import logging
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
-from ..llm import LLMClient
-from ..config import ConfigManager
+from ..common.llm import LLMClient
+from ..common.config import ConfigManager
 
 logger = logging.getLogger(__name__)
 
