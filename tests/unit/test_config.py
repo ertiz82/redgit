@@ -8,7 +8,7 @@ import yaml
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from redgit.core.config import (
+from redgit.core.common.config import (
     ConfigManager,
     StateManager,
     DEFAULT_WORKFLOW,

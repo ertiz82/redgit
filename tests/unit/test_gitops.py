@@ -8,7 +8,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from redgit.core.gitops import (
+from redgit.core.common.gitops import (
     GitOps,
     NotAGitRepoError,
     init_git_repo,

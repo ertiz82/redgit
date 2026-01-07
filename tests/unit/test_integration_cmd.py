@@ -102,7 +102,7 @@ class TestGetInstalledIntegrations:
         """Returns empty set when no integrations installed."""
         monkeypatch.chdir(tmp_path)
 
-        with patch('redgit.core.config.GLOBAL_INTEGRATIONS_DIR', tmp_path / "global"):
+        with patch('redgit.core.common.config.GLOBAL_INTEGRATIONS_DIR', tmp_path / "global"):
             result = _get_installed_integrations()
 
         assert result == set()
@@ -117,7 +117,7 @@ class TestGetInstalledIntegrations:
         integration_dir.mkdir(parents=True)
         (integration_dir / "__init__.py").write_text("# integration")
 
-        with patch('redgit.core.config.GLOBAL_INTEGRATIONS_DIR', global_dir):
+        with patch('redgit.core.common.config.GLOBAL_INTEGRATIONS_DIR', global_dir):
             result = _get_installed_integrations()
 
         assert "my_integration" in result
@@ -131,7 +131,7 @@ class TestGetInstalledIntegrations:
         integration_dir.mkdir(parents=True)
         (integration_dir / "__init__.py").write_text("# integration")
 
-        with patch('redgit.core.config.GLOBAL_INTEGRATIONS_DIR', tmp_path / "nonexistent"):
+        with patch('redgit.core.common.config.GLOBAL_INTEGRATIONS_DIR', tmp_path / "nonexistent"):
             result = _get_installed_integrations()
 
         assert "local_integration" in result
@@ -144,7 +144,7 @@ class TestGetInstalledIntegrations:
         integration_dir = tmp_path / ".redgit" / "integrations" / "not_a_package"
         integration_dir.mkdir(parents=True)
 
-        with patch('redgit.core.config.GLOBAL_INTEGRATIONS_DIR', tmp_path / "nonexistent"):
+        with patch('redgit.core.common.config.GLOBAL_INTEGRATIONS_DIR', tmp_path / "nonexistent"):
             result = _get_installed_integrations()
 
         assert "not_a_package" not in result
@@ -164,7 +164,7 @@ class TestGetInstalledIntegrations:
         project_int_dir.mkdir(parents=True)
         (project_int_dir / "__init__.py").write_text("# project")
 
-        with patch('redgit.core.config.GLOBAL_INTEGRATIONS_DIR', global_dir):
+        with patch('redgit.core.common.config.GLOBAL_INTEGRATIONS_DIR', global_dir):
             result = _get_installed_integrations()
 
         assert "global_int" in result

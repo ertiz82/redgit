@@ -7,7 +7,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from redgit.core.llm import (
+from redgit.core.common.llm import (
     load_providers,
     check_provider_available,
     get_available_providers,
@@ -37,7 +37,7 @@ class TestLoadProviders:
         for name, config in providers.items():
             assert "type" in config, f"Provider {name} missing 'type'"
 
-    @patch('redgit.core.llm.PROVIDERS_FILE')
+    @patch('redgit.core.common.llm.PROVIDERS_FILE')
     def test_returns_empty_when_file_missing(self, mock_file):
         """Test returns empty dict when file doesn't exist."""
         mock_file.exists.return_value = False
@@ -113,8 +113,8 @@ class TestGetAllProviders:
 class TestGetAvailableProviders:
     """Tests for get_available_providers function."""
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_filters_available_providers(self, mock_load, mock_check):
         """Test that only available providers are returned."""
         mock_load.return_value = {
@@ -132,8 +132,8 @@ class TestGetAvailableProviders:
 class TestLLMClientInit:
     """Tests for LLMClient initialization."""
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_init_with_explicit_provider(self, mock_load, mock_check):
         """Test initialization with explicit provider."""
         mock_load.return_value = {
@@ -146,8 +146,8 @@ class TestLLMClientInit:
         assert client.provider_name == "ollama"
         assert client.model == "llama2"
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_init_with_custom_model(self, mock_load, mock_check):
         """Test initialization with custom model."""
         mock_load.return_value = {
@@ -159,8 +159,8 @@ class TestLLMClientInit:
 
         assert client.model == "codellama"
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_init_sets_timeout(self, mock_load, mock_check):
         """Test initialization sets timeout from config."""
         mock_load.return_value = {
@@ -172,8 +172,8 @@ class TestLLMClientInit:
 
         assert client.timeout == 300
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_init_default_timeout(self, mock_load, mock_check):
         """Test initialization uses default timeout."""
         mock_load.return_value = {
@@ -185,7 +185,7 @@ class TestLLMClientInit:
 
         assert client.timeout == 120
 
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.load_providers')
     def test_init_raises_for_unknown_provider(self, mock_load):
         """Test initialization raises for unknown provider."""
         mock_load.return_value = {"ollama": {"type": "api"}}
@@ -193,8 +193,8 @@ class TestLLMClientInit:
         with pytest.raises(ValueError, match="Unknown LLM provider"):
             LLMClient({"provider": "nonexistent"})
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_init_raises_when_provider_unavailable(self, mock_load, mock_check):
         """Test initialization raises when provider not available."""
         mock_load.return_value = {
@@ -209,8 +209,8 @@ class TestLLMClientInit:
 class TestLLMClientAutoDetect:
     """Tests for LLMClient auto-detection."""
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_auto_detect_selects_first_available(self, mock_load, mock_check):
         """Test auto-detect selects first available provider."""
         mock_load.return_value = {
@@ -224,8 +224,8 @@ class TestLLMClientAutoDetect:
 
         assert client.provider_name == "ollama"
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_auto_detect_raises_when_none_available(self, mock_load, mock_check):
         """Test auto-detect raises when no provider available."""
         mock_load.return_value = {
@@ -240,8 +240,8 @@ class TestLLMClientAutoDetect:
 class TestLLMClientParseYaml:
     """Tests for LLMClient._parse_yaml method."""
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def setup_method(self, method, mock_load=None, mock_check=None):
         """Set up test fixtures."""
         # Create a mock client for testing parse methods
@@ -255,8 +255,8 @@ groups:
     commit_title: "feat: test"
 ```'''
 
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -273,8 +273,8 @@ groups:
 {"groups": [{"files": ["a.py"], "commit_title": "feat: test"}]}
 ```'''
 
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -290,8 +290,8 @@ groups:
   - files: ["a.py"]
     commit_title: "feat: test"'''
 
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -310,8 +310,8 @@ groups:
   commit_title: "fix: second"
 ```'''
 
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -325,8 +325,8 @@ groups:
         """Test parsing raises on invalid YAML."""
         output = "not: valid: yaml: {{{"
 
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -340,16 +340,16 @@ class TestLLMClientCleanYaml:
 
     def _get_client(self):
         """Helper to create a mock client."""
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             return LLMClient({"provider": "ollama"})
 
     def test_removes_leading_yaml_word(self):
         """Test removes leading 'yaml' word."""
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -360,8 +360,8 @@ class TestLLMClientCleanYaml:
 
     def test_removes_duplicate_yaml(self):
         """Test removes duplicate 'yaml' words."""
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -372,8 +372,8 @@ class TestLLMClientCleanYaml:
 
     def test_handles_groupsyaml_prefix(self):
         """Test handles 'groupsyaml' prefix."""
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -384,8 +384,8 @@ class TestLLMClientCleanYaml:
 
     def test_preserves_valid_yaml(self):
         """Test preserves already valid YAML."""
-        with patch('redgit.core.llm.load_providers') as mock_load, \
-             patch('redgit.core.llm.check_provider_available') as mock_check:
+        with patch('redgit.core.common.llm.load_providers') as mock_load, \
+             patch('redgit.core.common.llm.check_provider_available') as mock_check:
             mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
             mock_check.return_value = True
             client = LLMClient({"provider": "ollama"})
@@ -399,8 +399,8 @@ class TestLLMClientCleanYaml:
 class TestLLMClientGenerateGroups:
     """Tests for LLMClient.generate_groups method."""
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_generate_groups_returns_list(self, mock_load, mock_check):
         """Test generate_groups returns a list."""
         mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
@@ -415,8 +415,8 @@ class TestLLMClientGenerateGroups:
 
             assert isinstance(result, list)
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_generate_groups_with_return_raw(self, mock_load, mock_check):
         """Test generate_groups with return_raw=True."""
         mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
@@ -432,8 +432,8 @@ class TestLLMClientGenerateGroups:
             assert isinstance(groups, list)
             assert raw == "raw output"
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_generate_groups_uses_cli_for_cli_provider(self, mock_load, mock_check):
         """Test generate_groups uses CLI for CLI provider."""
         mock_load.return_value = {"claude-code": {"type": "cli", "default_model": "claude"}}
@@ -452,8 +452,8 @@ class TestLLMClientGenerateGroups:
 class TestLLMClientChat:
     """Tests for LLMClient.chat method."""
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_chat_returns_string(self, mock_load, mock_check):
         """Test chat returns a string."""
         mock_load.return_value = {"ollama": {"type": "api", "default_model": "test"}}
@@ -468,8 +468,8 @@ class TestLLMClientChat:
 
             assert result == "Hello, world!"
 
-    @patch('redgit.core.llm.check_provider_available')
-    @patch('redgit.core.llm.load_providers')
+    @patch('redgit.core.common.llm.check_provider_available')
+    @patch('redgit.core.common.llm.load_providers')
     def test_chat_raises_for_unknown_type(self, mock_load, mock_check):
         """Test chat raises for unknown provider type."""
         mock_load.return_value = {"test": {"type": "unknown", "default_model": "test"}}
