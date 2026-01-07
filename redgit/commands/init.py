@@ -3,8 +3,8 @@ import subprocess
 import typer
 from pathlib import Path
 
-from ..core.config import ConfigManager, RETGIT_DIR
-from ..core.llm import load_providers, check_provider_available
+from ..core.common.config import ConfigManager, RETGIT_DIR
+from ..core.common.llm import load_providers, check_provider_available
 from ..plugins.registry import detect_project_type, get_builtin_plugins
 
 # Package source directories
