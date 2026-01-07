@@ -5,7 +5,7 @@ from typing import List, Generator, Optional
 import git
 from git.exc import InvalidGitRepositoryError
 
-from ..utils.security import is_excluded
+from ...utils.security import is_excluded
 from .constants import (
     MAX_DIFF_LENGTH,
     GIT_CONFLICT_STATUSES,
@@ -57,12 +57,13 @@ class GitOps:
                 )
         self.original_branch = self.repo.active_branch.name if self.repo.head.is_valid() else "main"
 
-    def get_changes(self, include_excluded: bool = False) -> List[dict]:
+    def get_changes(self, include_excluded: bool = False, staged_only: bool = False) -> List[dict]:
         """
         Get list of changed files in the repository.
 
         Args:
             include_excluded: If True, include sensitive/excluded files (not recommended)
+            staged_only: If True, only return staged (index) changes, ignore unstaged/untracked
 
         Returns:
             List of {"file": path, "status": "U"|"M"|"A"|"D"|"C"} dicts
@@ -73,6 +74,7 @@ class GitOps:
 
         # First, check for merge conflicts (unmerged files)
         # These need special handling as they don't appear in normal diffs
+        # Note: Conflicts are always included even in staged_only mode
         try:
             result = subprocess.run(
                 ["git", "status", "--porcelain"],
@@ -107,21 +109,23 @@ class GitOps:
         except Exception:
             pass
 
-        # Untracked files (new files not yet added to git)
-        for f in self.repo.untracked_files:
-            if f not in seen:
-                seen.add(f)
-                if include_excluded or not is_excluded(f):
-                    changes.append({"file": f, "status": "U"})
+        # Skip untracked and unstaged if staged_only mode
+        if not staged_only:
+            # Untracked files (new files not yet added to git)
+            for f in self.repo.untracked_files:
+                if f not in seen:
+                    seen.add(f)
+                    if include_excluded or not is_excluded(f):
+                        changes.append({"file": f, "status": "U"})
 
-        # Unstaged changes (modified in working directory but not staged)
-        for item in self.repo.index.diff(None):
-            f = item.a_path or item.b_path
-            if f not in seen:
-                seen.add(f)
-                if include_excluded or not is_excluded(f):
-                    status = "D" if item.deleted_file else "M"
-                    changes.append({"file": f, "status": status})
+            # Unstaged changes (modified in working directory but not staged)
+            for item in self.repo.index.diff(None):
+                f = item.a_path or item.b_path
+                if f not in seen:
+                    seen.add(f)
+                    if include_excluded or not is_excluded(f):
+                        status = "D" if item.deleted_file else "M"
+                        changes.append({"file": f, "status": status})
 
         # Staged changes (added to index, ready to commit)
         if self.repo.head.is_valid():
@@ -650,6 +654,62 @@ class GitOps:
         except Exception:
             return False
 
+    def checkout(self, branch_name: str) -> bool:
+        """
+        Checkout an existing branch, preserving uncommitted changes via stash.
+
+        Args:
+            branch_name: Name of the branch to checkout
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Stash current changes first
+        stash_created = False
+        try:
+            self.repo.git.stash("push", "-u", "-m", f"redgit-checkout-{branch_name}")
+            stash_created = True
+        except Exception:
+            pass
+
+        try:
+            self.repo.git.checkout(branch_name)
+
+            # Pop stash to restore changes
+            if stash_created:
+                self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+
+            return True
+        except Exception:
+            # Recovery - try to pop stash even if checkout failed
+            if stash_created:
+                self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+            return False
+
+    def push(self, branch_name: str = None, set_upstream: bool = True) -> bool:
+        """
+        Push a branch to remote.
+
+        Args:
+            branch_name: Name of the branch to push (default: current branch)
+            set_upstream: Whether to set upstream tracking (-u flag)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if branch_name is None:
+                branch_name = self.repo.active_branch.name
+
+            if set_upstream:
+                self.repo.git.push("-u", "origin", branch_name)
+            else:
+                self.repo.git.push("origin", branch_name)
+
+            return True
+        except Exception:
+            return False
+
     def checkout_or_create_branch(
         self,
         branch_name: str,
@@ -924,3 +984,47 @@ class GitOps:
             self._pop_stash_by_message(f"redgit-subtask-{subtask_branch}")
             self._pop_stash_by_message(f"redgit-remaining-{subtask_branch}")
             raise e
+
+    def get_project_name(self) -> str:
+        """
+        Get the project name from git remote URL or folder name.
+
+        This extracts the repository name from the remote 'origin' URL.
+        Falls back to the working directory name if no remote is configured.
+
+        Returns:
+            Project name (without .git suffix, lowercase)
+        """
+        import re
+        try:
+            # Try to get remote origin URL
+            remote_url = self.repo.git.remote("get-url", "origin")
+            if remote_url:
+                # Extract repo name from various URL formats:
+                # git@github.com:user/repo.git
+                # https://github.com/user/repo.git
+                # https://github.com/user/repo
+                # git@bitbucket.org:user/repo.git
+
+                # Remove .git suffix
+                if remote_url.endswith(".git"):
+                    remote_url = remote_url[:-4]
+
+                # Get the last part (repo name)
+                # Handle both SSH (git@host:user/repo) and HTTPS (https://host/user/repo)
+                if ":" in remote_url and "@" in remote_url:
+                    # SSH format: git@github.com:user/repo
+                    repo_path = remote_url.split(":")[-1]
+                else:
+                    # HTTPS format: https://github.com/user/repo
+                    repo_path = remote_url
+
+                # Get just the repo name (last part of path)
+                repo_name = repo_path.rstrip("/").split("/")[-1]
+                return repo_name.lower()
+
+        except Exception:
+            pass
+
+        # Fallback to working directory name
+        return Path(self.repo.working_dir).name.lower()

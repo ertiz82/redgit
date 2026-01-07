@@ -2,19 +2,20 @@ import requests
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from ..prompts import RESPONSE_SCHEMA
-from ..core.config import RETGIT_DIR
-from ..core.constants import (
+from ...prompts import RESPONSE_SCHEMA
+from .config import RETGIT_DIR
+from .constants import (
     MAX_FILE_CONTENT_LENGTH,
     MAX_ISSUE_DESC_LENGTH,
     MAX_FILES_DISPLAY,
     SUPPORTED_LANGUAGES,
     DEFAULT_LANGUAGE,
 )
-from ..plugins.registry import get_plugin_by_name, get_builtin_plugins
+from ...plugins.registry import get_plugin_by_name, get_builtin_plugins
 
 # Builtin prompts directory (inside package)
-BUILTIN_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+# Path: core/common/prompt.py -> parent.parent.parent = redgit/
+BUILTIN_PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 # Static prompt categories (inside package)
 PROMPT_CATEGORIES = {
@@ -208,6 +209,65 @@ class PromptManager:
 
         return prompt
 
+    def get_multi_task_prompt(
+        self,
+        changes: List[Dict],
+        parent_tasks: List,  # List of Issue objects
+        issue_language: Optional[str] = None
+    ) -> str:
+        """
+        Build prompt for multi-parent-task analysis.
+
+        Analyzes files and determines which parent task each belongs to,
+        then groups files into subtasks under each parent.
+
+        Args:
+            changes: List of file changes
+            parent_tasks: List of Issue objects (with key, summary, description)
+            issue_language: Language for issue titles (e.g., "tr", "en")
+
+        Returns:
+            Complete prompt for multi-task analysis
+        """
+        # Load multi-task template
+        template = self._load_by_name("multi_task", category="commit")
+
+        # Format file list
+        files_section = self._format_files(changes)
+
+        # Format parent tasks
+        task_lines = []
+        for task in parent_tasks:
+            task_lines.append(f"**{task.key}**: {task.summary}")
+            if hasattr(task, 'description') and task.description:
+                # Truncate long descriptions
+                desc = task.description[:300]
+                if len(task.description) > 300:
+                    desc += "..."
+                task_lines.append(f"  Description: {desc}")
+            task_lines.append("")  # Empty line between tasks
+
+        parent_tasks_section = "\n".join(task_lines)
+
+        # Replace placeholders
+        prompt = template.replace("{{PARENT_TASKS}}", parent_tasks_section)
+        prompt = prompt.replace("{{FILES}}", files_section)
+
+        # Add language note if needed
+        if issue_language and issue_language != "en":
+            lang_names = {
+                "tr": "Turkish", "de": "German", "fr": "French",
+                "es": "Spanish", "pt": "Portuguese", "it": "Italian",
+                "ru": "Russian", "zh": "Chinese", "ja": "Japanese",
+                "ko": "Korean", "ar": "Arabic"
+            }
+            lang_name = lang_names.get(issue_language, issue_language)
+            prompt = prompt.replace("{{ISSUE_LANGUAGE}}", lang_name)
+        else:
+            prompt = prompt.replace("{{ISSUE_LANGUAGE}}", "English")
+
+        return prompt
+
     def _load_template(
         self,
         prompt_name: Optional[str],
@@ -326,7 +386,7 @@ class PromptManager:
     @staticmethod
     def _get_integration_prompt(integration_name: str, prompt_name: str) -> Optional[str]:
         """Get prompt from integration's get_prompts() method."""
-        from ..integrations.registry import get_integration_class
+        from ...integrations.registry import get_integration_class
 
         integration_cls = get_integration_class(integration_name)
         if integration_cls and hasattr(integration_cls, "get_prompts"):
@@ -386,7 +446,7 @@ class PromptManager:
                     result[category] = prompts
 
         # Integration prompts (from loaded integrations)
-        from ..integrations.registry import get_all_integration_classes
+        from ...integrations.registry import get_all_integration_classes
 
         for name, cls in get_all_integration_classes().items():
             if hasattr(cls, "get_prompts"):
