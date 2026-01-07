@@ -1,7 +1,7 @@
 import typer
 from pathlib import Path
 
-from ..core.config import ConfigManager, GLOBAL_PLUGINS_DIR
+from ..core.common.config import ConfigManager, GLOBAL_PLUGINS_DIR
 from ..plugins.registry import get_all_plugins
 
 plugin_app = typer.Typer(help="Plugin management")
@@ -52,7 +52,7 @@ def list_cmd(
 
     # Show available from taps
     if all_plugins:
-        from ..core.tap import TapManager
+        from ..core.tap.manager import TapManager
 
         tap_mgr = TapManager()
         tap_plugins = tap_mgr.get_all_plugins(include_installed=True)
