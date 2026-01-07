@@ -11,16 +11,55 @@ from rich.prompt import Confirm, Prompt
 
 import re
 
-from ..core.config import ConfigManager, StateManager
-from ..core.gitops import GitOps, NotAGitRepoError, init_git_repo
-from ..core.llm import LLMClient
-from ..core.prompt import PromptManager
+from ..core.common.config import ConfigManager, StateManager
+from ..core.common.gitops import GitOps, NotAGitRepoError, init_git_repo
+from ..core.common.llm import LLMClient
+from ..core.common.prompt import PromptManager
+from ..core.common.backup import BackupManager
+from ..core.propose.commit import build_commit_message, execute_commit_group, build_commit_from_group, CommitResult
+from ..core.propose.display import (
+    display_file_list,
+    display_commit_result,
+    display_group_details,
+    show_prompt_sources,
+    show_active_issues,
+    show_groups_summary,
+    show_verbose_groups,
+    show_dry_run_summary,
+    show_task_commit_dry_run,
+    show_multi_task_summary,
+    show_multi_task_dry_run,
+)
+from ..core.propose.analysis import (
+    setup_llm_and_generate_groups,
+    enhance_groups_with_diffs,
+    build_detailed_analysis_prompt,
+    parse_detailed_result,
+)
 from ..integrations.registry import get_task_management, get_code_hosting, get_notification
 from ..integrations.base import TaskManagementBase, Issue
 from ..plugins.registry import load_plugins, get_active_plugin
 from ..utils.security import filter_changes
 from ..utils.logging import get_logger
 from ..utils.notifications import NotificationService
+
+console = Console()
+
+
+def _show_recovery_info(backup_id: str, error: Exception):
+    """Show detailed recovery information after failure."""
+    console.print("\n[red bold]═══ HATA OLUŞTU ═══[/red bold]\n")
+    console.print(f"[red]Hata: {error}[/red]\n")
+
+    console.print("[yellow]Working tree yedeği alındı. Geri yüklemek için:[/yellow]")
+    console.print(f"  [cyan]rg backup restore[/cyan]           # Son yedeği geri yükle")
+    console.print(f"  [cyan]rg backup restore {backup_id}[/cyan]  # Bu yedeği geri yükle")
+    console.print(f"  [cyan]rg backup list[/cyan]              # Tüm yedekleri listele")
+
+    console.print("\n[yellow]Manuel düzeltme için:[/yellow]")
+    console.print("  [dim]git status[/dim]                   # Mevcut durumu gör")
+    console.print("  [dim]git stash list[/dim]               # Bekleyen stash'leri gör")
+    console.print("  [dim]git checkout <branch>[/dim]        # Branch'e dön")
 
 
 def _extract_issue_from_branch(branch_name: str, config: dict) -> Optional[str]:
@@ -59,30 +98,7 @@ def _extract_issue_from_branch(branch_name: str, config: dict) -> Optional[str]:
     return None
 
 
-def _build_commit_message(title: str, body: str = "", issue_ref: str = None) -> str:
-    """
-    Build commit message with RedGit signature.
-
-    Args:
-        title: Commit title (first line)
-        body: Commit body (details)
-        issue_ref: Issue reference (e.g., "PROJ-123")
-
-    Returns:
-        Complete commit message with RedGit signature
-    """
-    from ..core.constants import REDGIT_SIGNATURE
-
-    msg = title
-    if body:
-        msg += f"\n\n{body}"
-    if issue_ref:
-        msg += f"\n\nRefs: {issue_ref}"
-    msg += REDGIT_SIGNATURE
-    return msg
-
-
-console = Console()
+# Note: _build_commit_message moved to core/commit.py as build_commit_message
 
 
 # =============================================================================
@@ -167,21 +183,52 @@ def _init_gitops_with_fallback(dry_run: bool) -> Optional[GitOps]:
             raise typer.Exit(1)
 
 
-def _fetch_and_validate_changes(gitops: GitOps, subtasks: bool, task: Optional[str]) -> Optional[List[Dict]]:
+def _fetch_and_validate_changes(
+    gitops: GitOps,
+    subtasks: bool,
+    task: Optional[str],
+    staged_only: bool = False
+) -> Optional[List[Dict]]:
     """
     Fetch changes from git and perform validations.
+
+    Args:
+        gitops: Git operations helper
+        subtasks: Whether subtask mode is enabled
+        task: Task ID if specified
+        staged_only: If True, only get staged files
 
     Returns:
         List of changes or None if no changes/validation fails
     """
-    changes = gitops.get_changes()
+    changes = gitops.get_changes(staged_only=staged_only)
+
+    # Check for merge conflicts first
+    conflict_files = [c for c in changes if c.get("status") == "C" or c.get("conflict")]
+    if conflict_files:
+        console.print("\n[red bold]⚠️  Merge conflict detected![/red bold]")
+        console.print("[red]The following files have unresolved conflicts:[/red]")
+        for cf in conflict_files:
+            console.print(f"  [red]• {cf['file']}[/red]")
+        console.print("\n[yellow]Please resolve conflicts first:[/yellow]")
+        console.print("  [dim]git status                    # See conflict details[/dim]")
+        console.print("  [dim]git checkout --theirs <file>  # Accept remote version[/dim]")
+        console.print("  [dim]git checkout --ours <file>    # Accept local version[/dim]")
+        console.print("  [dim]git add <file>                # Mark as resolved[/dim]")
+        return None
     excluded_files = gitops.get_excluded_changes()
 
     if excluded_files:
         console.print(f"[dim]Locked: {len(excluded_files)} sensitive files excluded[/dim]")
 
+    if staged_only:
+        console.print("[dim]Mode: --staged (only staged files)[/dim]")
+
     if not changes:
-        console.print("[yellow]Warning: No changes found.[/yellow]")
+        if staged_only:
+            console.print("[yellow]Warning: No staged changes found. Use 'git add' to stage files.[/yellow]")
+        else:
+            console.print("[yellow]Warning: No changes found.[/yellow]")
         return None
 
     # Filter for sensitive files warning
@@ -196,10 +243,7 @@ def _fetch_and_validate_changes(gitops: GitOps, subtasks: bool, task: Optional[s
 
     console.print(f"[cyan]Found {len(changes)} file changes.[/cyan]")
 
-    # Validate --subtasks requires --task
-    if subtasks and not task:
-        console.print("[red]Error: --subtasks requires --task flag (e.g., rg propose -t PROJ-123 --subtasks)[/red]")
-        raise typer.Exit(1)
+    # Note: --subtasks validation moved to propose_cmd() after auto-enable logic
 
     return changes
 
@@ -238,7 +282,7 @@ def _setup_llm_and_generate_groups(
 
     if verbose:
         console.print(f"\n[bold cyan]=== Prompt Sources ===[/bold cyan]")
-        _show_prompt_sources(prompt_name, plugin_prompt, None, issue_language)
+        show_prompt_sources(prompt_name, plugin_prompt, None, issue_language)
 
     try:
         final_prompt = prompt_manager.get_prompt(
@@ -289,7 +333,7 @@ def _setup_llm_and_generate_groups(
         console.print("[green]Detailed analysis complete[/green]\n")
 
     if verbose:
-        _show_verbose_groups(groups)
+        show_verbose_groups(groups)
 
     return groups, llm
 
@@ -364,6 +408,26 @@ def propose_cmd(
     subtasks: bool = typer.Option(
         False, "--subtasks", "-s",
         help="Create subtasks under the specified task (requires --task)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Skip LLM task relevance check, commit all files under the specified task (requires --task)"
+    ),
+    multi: bool = typer.Option(
+        False, "--multi", "-m",
+        help="Analyze changes for multiple parent tasks from active issues"
+    ),
+    ask: bool = typer.Option(
+        False, "--ask", "-a",
+        help="Interactive mode - select options step by step"
+    ),
+    staged: bool = typer.Option(
+        False, "--staged", "--cached",
+        help="Only analyze staged (git add) files, ignore unstaged changes"
+    ),
+    single_branch: bool = typer.Option(
+        False, "--single-branch", "-sb",
+        help="Commit all groups to current branch (no separate branches)"
     )
 ):
     """Analyze changes and propose commit groups with task matching."""
@@ -395,7 +459,7 @@ def propose_cmd(
 
     # Verbose: Show config paths
     if verbose:
-        from ..core.config import RETGIT_DIR
+        from ..core.common.config import RETGIT_DIR
         console.print(Panel("[bold cyan]VERBOSE MODE[/bold cyan]", style="cyan"))
         console.print(f"[dim]Config: {RETGIT_DIR / 'config.yaml'}[/dim]")
 
@@ -425,8 +489,81 @@ def propose_cmd(
     active_plugin = get_active_plugin(plugins)
 
     # Fetch and validate changes
-    changes = _fetch_and_validate_changes(gitops, subtasks, task)
+    changes = _fetch_and_validate_changes(gitops, subtasks, task, staged_only=staged)
     if changes is None:
+        return
+
+    # Create backup before any git operations
+    import sys
+    backup_manager = BackupManager(gitops)
+    backup_id = None
+    try:
+        command_args = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else ""
+        command_str = f"rg propose {command_args}"
+        backup_id = backup_manager.create_backup(command_str, changes)
+        console.print(f"[dim]Backup: {backup_id}[/dim]")
+    except Exception as backup_error:
+        console.print(f"[yellow]Warning: Could not create backup: {backup_error}[/yellow]")
+
+    # Handle --ask interactive mode first
+    subtask_mode = subtasks  # Default from CLI flag
+    if ask:
+        options = _interactive_setup(config, task_mgmt)
+        if options["mode"] == "multi":
+            multi = True
+        elif options["mode"] == "task":
+            task = options.get("task")
+        detailed = options.get("detailed", detailed)
+        subtask_mode = options.get("subtask_mode", subtasks)
+        # Note: create_policy is handled within the processing functions
+
+    # Auto-enable multi mode when --staged + --subtasks used without --task
+    # This matches staged files to active tasks and creates subtasks
+    if staged and subtasks and not task and not multi:
+        if task_mgmt and task_mgmt.enabled:
+            console.print("[cyan]--staged + --subtasks: Staged dosyalar aktif tasklarla eşleştirilecek[/cyan]")
+            multi = True
+            subtask_mode = True
+
+    # Validate --subtasks requires either --task or --multi (after auto-enable logic)
+    if subtasks and not task and not multi:
+        console.print("[red]Error: --subtasks requires --task flag (e.g., rg propose -t PROJ-123 --subtasks)[/red]")
+        console.print("[dim]Tip: Use --staged -s for auto-matching with active tasks[/dim]")
+        raise typer.Exit(1)
+
+    # Handle --multi mode (before task-filtered mode)
+    if multi:
+        if not task_mgmt or not task_mgmt.enabled:
+            console.print("[red]❌ Task management integration required for --multi flag[/red]")
+            console.print("[dim]Configure Jira or another task management in .redgit/config.yaml[/dim]")
+            raise typer.Exit(1)
+
+        # task parameter can be comma-separated for multi mode
+        task_filter = task  # None if not specified, otherwise comma-separated IDs
+
+        try:
+            _process_multi_task_mode(
+                changes=changes,
+                gitops=gitops,
+                task_mgmt=task_mgmt,
+                state_manager=state_manager,
+                config=config,
+                task_filter=task_filter,
+                verbose=verbose,
+                detailed=detailed,
+                dry_run=dry_run,
+                subtask_mode=subtask_mode
+            )
+            # Mark backup as completed on success
+            if backup_id:
+                backup_manager.mark_completed(backup_id)
+                backup_manager.cleanup_old_backups(keep=5)
+        except Exception as e:
+            # Mark backup as failed and show recovery info
+            if backup_id:
+                backup_manager.mark_failed(backup_id, str(e))
+                _show_recovery_info(backup_id, e)
+            raise
         return
 
     # Auto-detect task from branch if on a task branch and -t not provided
@@ -457,23 +594,36 @@ def propose_cmd(
             _show_task_filtered_dry_run(task, changes, gitops, task_mgmt, config, verbose)
             return
 
-        _process_task_filtered_mode(
-            task_id=task,
-            changes=changes,
-            gitops=gitops,
-            task_mgmt=task_mgmt,
-            state_manager=state_manager,
-            config=config,
-            verbose=verbose,
-            detailed=detailed
-        )
+        try:
+            _process_task_filtered_mode(
+                task_id=task,
+                changes=changes,
+                gitops=gitops,
+                task_mgmt=task_mgmt,
+                state_manager=state_manager,
+                config=config,
+                verbose=verbose,
+                detailed=detailed,
+                force=force
+            )
 
-        # Track usage pattern for future suggestions
-        current_params = _extract_param_pattern(
-            prompt=prompt, no_task=no_task, task=task,
-            dry_run=dry_run, verbose=verbose, detailed=detailed, subtasks=subtasks
-        )
-        state_manager.add_propose_usage(current_params)
+            # Track usage pattern for future suggestions
+            current_params = _extract_param_pattern(
+                prompt=prompt, no_task=no_task, task=task,
+                dry_run=dry_run, verbose=verbose, detailed=detailed, subtasks=subtasks
+            )
+            state_manager.add_propose_usage(current_params)
+
+            # Mark backup as completed on success
+            if backup_id:
+                backup_manager.mark_completed(backup_id)
+                backup_manager.cleanup_old_backups(keep=5)
+        except Exception as e:
+            # Mark backup as failed and show recovery info
+            if backup_id:
+                backup_manager.mark_failed(backup_id, str(e))
+                _show_recovery_info(backup_id, e)
+            raise
         return
 
     # Note: The old subtasks-only mode is now merged into task-filtered mode above
@@ -494,7 +644,7 @@ def propose_cmd(
 
         if active_issues:
             console.print(f"[green]   Found {len(active_issues)} active issues[/green]")
-            _show_active_issues(active_issues)
+            show_active_issues(active_issues)
         else:
             console.print("[dim]   No active issues found[/dim]")
 
@@ -536,11 +686,11 @@ def propose_cmd(
     matched_groups, unmatched_groups = _categorize_groups(groups, task_mgmt)
 
     # Show results
-    _show_groups_summary(matched_groups, unmatched_groups, task_mgmt)
+    show_groups_summary(matched_groups, unmatched_groups, task_mgmt)
 
     # Dry run: Show what would be done and exit
     if dry_run:
-        _show_dry_run_summary(
+        show_dry_run_summary(
             matched_groups=matched_groups,
             unmatched_groups=unmatched_groups,
             task_mgmt=task_mgmt,
@@ -554,153 +704,90 @@ def propose_cmd(
     if not Confirm.ask(f"\nProceed with {total_groups} groups?"):
         return
 
-    # Save base branch for session
-    state_manager.set_base_branch(gitops.original_branch)
+    try:
+        # Save base branch for session
+        state_manager.set_base_branch(gitops.original_branch)
 
-    # Check if using subtasks mode with hierarchical branching
-    if subtasks and parent_task_key and parent_issue:
-        # Subtasks mode: hierarchical branching strategy
-        # - Create parent branch from original
-        # - Each subtask branches from parent, merges back to parent
-        # - Parent merges to original (or kept for PR)
-        _process_subtasks_mode(
-            matched_groups=matched_groups,
-            unmatched_groups=unmatched_groups,
-            gitops=gitops,
-            task_mgmt=task_mgmt,
+        # Check if using subtasks mode with hierarchical branching
+        if subtasks and parent_task_key and parent_issue:
+            # Subtasks mode: hierarchical branching strategy
+            # - Create parent branch from original
+            # - Each subtask branches from parent, merges back to parent
+            # - Parent merges to original (or kept for PR)
+            _process_subtasks_mode(
+                matched_groups=matched_groups,
+                unmatched_groups=unmatched_groups,
+                gitops=gitops,
+                task_mgmt=task_mgmt,
+                state_manager=state_manager,
+                workflow=workflow,
+                config=config,
+                llm=llm,
+                parent_task_key=parent_task_key,
+                parent_issue=parent_issue
+            )
+        else:
+            # Standard mode: each group gets its own branch from original
+            # Process matched groups
+            if matched_groups:
+                console.print("\n[bold cyan]Processing matched groups...[/bold cyan]")
+                _process_matched_groups(
+                    matched_groups, gitops, task_mgmt, state_manager, workflow,
+                    single_branch=single_branch
+                )
+
+            # Process unmatched groups
+            if unmatched_groups:
+                console.print("\n[bold yellow]Processing unmatched groups...[/bold yellow]")
+                _process_unmatched_groups(
+                    unmatched_groups, gitops, task_mgmt, state_manager, workflow, config, llm,
+                    parent_key=None,  # No hierarchical branching in standard mode
+                    single_branch=single_branch
+                )
+
+        # Finalize session and track usage
+        _finalize_propose_session(
             state_manager=state_manager,
             workflow=workflow,
             config=config,
-            llm=llm,
-            parent_task_key=parent_task_key,
-            parent_issue=parent_issue
+            prompt=prompt,
+            no_task=no_task,
+            task=task,
+            dry_run=dry_run,
+            verbose=verbose,
+            detailed=detailed,
+            subtasks=subtasks
         )
-    else:
-        # Standard mode: each group gets its own branch from original
-        # Process matched groups
-        if matched_groups:
-            console.print("\n[bold cyan]Processing matched groups...[/bold cyan]")
-            _process_matched_groups(
-                matched_groups, gitops, task_mgmt, state_manager, workflow
-            )
 
-        # Process unmatched groups
-        if unmatched_groups:
-            console.print("\n[bold yellow]Processing unmatched groups...[/bold yellow]")
-            _process_unmatched_groups(
-                unmatched_groups, gitops, task_mgmt, state_manager, workflow, config, llm,
-                parent_key=None  # No hierarchical branching in standard mode
-            )
-
-    # Finalize session and track usage
-    _finalize_propose_session(
-        state_manager=state_manager,
-        workflow=workflow,
-        config=config,
-        prompt=prompt,
-        no_task=no_task,
-        task=task,
-        dry_run=dry_run,
-        verbose=verbose,
-        detailed=detailed,
-        subtasks=subtasks
-    )
+        # Mark backup as completed on success
+        if backup_id:
+            backup_manager.mark_completed(backup_id)
+            backup_manager.cleanup_old_backups(keep=5)
+    except Exception as e:
+        # Mark backup as failed and show recovery info
+        if backup_id:
+            backup_manager.mark_failed(backup_id, str(e))
+            _show_recovery_info(backup_id, e)
+        raise
 
 
-def _show_prompt_sources(
-    prompt_name: Optional[str],
-    plugin_prompt: Optional[str],
-    active_plugin: Optional[Any],
-    issue_language: Optional[str]
-):
-    """Show which prompt sources are being used (for verbose mode)."""
-    from pathlib import Path
-    from ..core.config import RETGIT_DIR
-    from ..core.prompt import BUILTIN_PROMPTS_DIR, PROMPT_CATEGORIES
+# =============================================================================
+# DEPRECATED WRAPPERS - Use functions from core.propose_display instead
+# =============================================================================
 
-    console.print(f"[dim]Prompt name (CLI): {prompt_name or 'auto'}[/dim]")
-    console.print(f"[dim]Active plugin: {active_plugin.name if active_plugin else 'none'}[/dim]")
-    console.print(f"[dim]Plugin prompt: {'yes' if plugin_prompt else 'no'}[/dim]")
-    console.print(f"[dim]Issue language: {issue_language or 'en (default)'}[/dim]")
-
-    # Check where the commit prompt comes from (same logic as _load_by_name)
-    category = "commit"
-    name = prompt_name or "default"
-
-    # 1. User override path: .redgit/prompts/commit/default.md
-    user_path = RETGIT_DIR / "prompts" / category / f"{name}.md"
-    if user_path.exists():
-        console.print(f"\n[green]✓ Using USER prompt:[/green] {user_path}")
-    else:
-        # 2. Legacy user path: .redgit/prompts/default.md
-        user_legacy = RETGIT_DIR / "prompts" / f"{name}.md"
-        if user_legacy.exists():
-            console.print(f"\n[green]✓ Using USER prompt (legacy path):[/green] {user_legacy}")
-        else:
-            # 3. Builtin path
-            builtin_dir = PROMPT_CATEGORIES.get(category)
-            if builtin_dir:
-                builtin_path = builtin_dir / f"{name}.md"
-                if builtin_path.exists():
-                    console.print(f"\n[cyan]Using BUILTIN prompt:[/cyan] {builtin_path}")
-                else:
-                    console.print(f"\n[yellow]Prompt not found:[/yellow] {name}")
-
-    # Show all user overrides in prompts folder
-    user_prompts_dir = RETGIT_DIR / "prompts"
-    if user_prompts_dir.exists():
-        user_files = list(user_prompts_dir.rglob("*.md"))
-        if user_files:
-            console.print(f"\n[dim]User prompt overrides ({len(user_files)}):[/dim]")
-            for f in user_files[:10]:
-                rel_path = f.relative_to(user_prompts_dir)
-                console.print(f"  [dim]• {rel_path}[/dim]")
-            if len(user_files) > 10:
-                console.print(f"  [dim]... and {len(user_files) - 10} more[/dim]")
+def _show_prompt_sources(*args, **kwargs):
+    """Deprecated: Use show_prompt_sources from core.propose_display instead."""
+    return show_prompt_sources(*args, **kwargs)
 
 
-def _show_active_issues(issues: List[Issue]):
-    """Display active issues in a compact format."""
-    table = Table(show_header=False, box=None, padding=(0, 1))
-    for issue in issues[:5]:
-        status_color = "green" if "progress" in issue.status.lower() else "yellow"
-        table.add_row(
-            f"[bold]{issue.key}[/bold]",
-            f"[{status_color}]{issue.status}[/{status_color}]",
-            issue.summary[:50] + ("..." if len(issue.summary) > 50 else "")
-        )
-    console.print(table)
-    if len(issues) > 5:
-        console.print(f"[dim]   ... and {len(issues) - 5} more[/dim]")
+def _show_active_issues(issues):
+    """Deprecated: Use show_active_issues from core.propose_display instead."""
+    return show_active_issues(issues)
 
 
-def _show_groups_summary(
-    matched: List[Dict],
-    unmatched: List[Dict],
-    task_mgmt: Optional[TaskManagementBase]
-):
-    """Show summary of groups."""
-
-    if matched:
-        console.print("\n[bold green]✓ Matched with existing issues:[/bold green]")
-        for g in matched:
-            issue = g.get("_issue")
-            console.print(f"  [green]• {g.get('issue_key')}[/green] - {g.get('commit_title', '')[:50]}")
-            console.print(f"    [dim]{len(g.get('files', []))} files[/dim]")
-
-    if unmatched:
-        console.print("\n[bold yellow]? No matching issue:[/bold yellow]")
-        for g in unmatched:
-            # Show issue_title (localized) if available, fallback to commit_title
-            display_title = g.get('issue_title') or g.get('commit_title', '')
-            console.print(f"  [yellow]• {display_title[:60]}[/yellow]")
-            # Also show commit_title if different from issue_title
-            if g.get('issue_title') and g.get('commit_title'):
-                console.print(f"    [dim]commit: {g.get('commit_title', '')[:50]}[/dim]")
-            console.print(f"    [dim]{len(g.get('files', []))} files[/dim]")
-
-        if task_mgmt and task_mgmt.enabled:
-            console.print("\n[dim]New issues will be created for unmatched groups[/dim]")
+def _show_groups_summary(matched, unmatched, task_mgmt):
+    """Deprecated: Use show_groups_summary from core.propose_display instead."""
+    return show_groups_summary(matched, unmatched, task_mgmt)
 
 
 def _categorize_groups(
@@ -738,113 +825,14 @@ def _categorize_groups(
     return matched_groups, unmatched_groups
 
 
-def _show_verbose_groups(groups: List[Dict]):
-    """Display parsed groups in verbose mode."""
-    console.print(f"\n[bold cyan]═══ Parsed Groups ({len(groups)}) ═══[/bold cyan]")
-    for i, g in enumerate(groups, 1):
-        console.print(f"\n[bold]Group {i}:[/bold]")
-        console.print(f"  [dim]Files:[/dim] {len(g.get('files', []))} files")
-        console.print(f"  [dim]commit_title:[/dim] {g.get('commit_title', 'N/A')}")
-        console.print(f"  [dim]issue_key:[/dim] {g.get('issue_key', 'null')}")
-        console.print(f"  [dim]issue_title:[/dim] {g.get('issue_title', 'null')}")
-        if g.get('files'):
-            console.print(f"  [dim]Files list:[/dim]")
-            for f in g.get('files', [])[:5]:
-                console.print(f"    - {f}")
-            if len(g.get('files', [])) > 5:
-                console.print(f"    ... and {len(g.get('files', [])) - 5} more")
+def _show_verbose_groups(groups):
+    """Deprecated: Use show_verbose_groups from core.propose_display instead."""
+    return show_verbose_groups(groups)
 
 
-def _show_dry_run_summary(
-    matched_groups: List[Dict],
-    unmatched_groups: List[Dict],
-    task_mgmt: Optional[TaskManagementBase],
-    parent_task_key: Optional[str] = None,
-    parent_issue: Optional[Issue] = None
-):
-    """Show detailed dry run summary of what would be done."""
-    console.print(f"\n[bold yellow]═══ DRY RUN SUMMARY ═══[/bold yellow]")
-
-    total_commits = len(matched_groups) + len(unmatched_groups)
-
-    # Show parent task info for subtasks mode
-    if parent_task_key and parent_issue:
-        console.print(f"\n[bold cyan]📋 Parent Task:[/bold cyan]")
-        console.print(f"   [bold]{parent_task_key}[/bold]: {parent_issue.summary}")
-        console.print(f"   [dim]Status: {parent_issue.status}[/dim]")
-        console.print(f"\n[cyan]Will create {total_commits} subtasks under this task:[/cyan]")
-    else:
-        console.print(f"\n[yellow]Would create {total_commits} commits:[/yellow]")
-
-    # Matched groups (existing issues)
-    if matched_groups:
-        console.print(f"\n[bold green]✓ Matched with existing issues ({len(matched_groups)}):[/bold green]")
-        for i, g in enumerate(matched_groups, 1):
-            issue = g.get("_issue")
-            branch = task_mgmt.format_branch_name(g["issue_key"], g.get("commit_title", "")) if task_mgmt else f"feature/{g['issue_key']}"
-            console.print(f"\n  [bold cyan]#{i}[/bold cyan] [bold]{g['issue_key']}[/bold]")
-            console.print(f"      [dim]Commit:[/dim]  {g.get('commit_title', '')[:60]}")
-            console.print(f"      [dim]Branch:[/dim]  {branch}")
-            console.print(f"      [dim]Files:[/dim]   {len(g.get('files', []))}")
-            # Show file list
-            for f in g.get('files', [])[:3]:
-                console.print(f"               [dim]• {f}[/dim]")
-            if len(g.get('files', [])) > 3:
-                console.print(f"               [dim]... +{len(g.get('files', [])) - 3} more[/dim]")
-
-    # Unmatched groups (new issues/subtasks to create)
-    if unmatched_groups:
-        if parent_task_key:
-            console.print(f"\n[bold yellow]📝 Subtasks to create ({len(unmatched_groups)}):[/bold yellow]")
-        else:
-            console.print(f"\n[bold yellow]📝 New issues to create ({len(unmatched_groups)}):[/bold yellow]")
-
-        for i, g in enumerate(unmatched_groups, 1):
-            # Calculate branch name
-            commit_title = g.get("commit_title", "untitled")
-            if task_mgmt:
-                # For preview, use placeholder issue key
-                preview_branch = f"feature/NEW-{i}-{commit_title[:20].lower().replace(' ', '-')}"
-            else:
-                clean_title = commit_title.lower()
-                clean_title = "".join(c if c.isalnum() or c == " " else "" for c in clean_title)
-                clean_title = clean_title.strip().replace(" ", "-")[:40]
-                preview_branch = f"feature/{clean_title}"
-
-            issue_title = g.get('issue_title') or g.get('commit_title', 'N/A')
-
-            console.print(f"\n  [bold cyan]#{i}[/bold cyan] [yellow]New {'Subtask' if parent_task_key else 'Issue'}[/yellow]")
-            console.print(f"      [dim]Title:[/dim]   {issue_title[:60]}")
-            console.print(f"      [dim]Commit:[/dim]  {commit_title[:60]}")
-            console.print(f"      [dim]Branch:[/dim]  {preview_branch}")
-            console.print(f"      [dim]Files:[/dim]   {len(g.get('files', []))}")
-            # Show file list
-            for f in g.get('files', [])[:3]:
-                console.print(f"               [dim]• {f}[/dim]")
-            if len(g.get('files', [])) > 3:
-                console.print(f"               [dim]... +{len(g.get('files', [])) - 3} more[/dim]")
-
-            # Show issue description preview if available
-            if g.get('issue_description'):
-                desc_preview = g['issue_description'][:100].replace('\n', ' ')
-                console.print(f"      [dim]Desc:[/dim]    {desc_preview}...")
-
-    # Summary
-    console.print(f"\n[bold]─────────────────────────────────────────[/bold]")
-    console.print(f"[bold]Summary:[/bold]")
-    console.print(f"   Total commits: {total_commits}")
-    if matched_groups:
-        console.print(f"   Existing issues: {len(matched_groups)}")
-    if unmatched_groups:
-        if parent_task_key:
-            console.print(f"   New subtasks: {len(unmatched_groups)} (under {parent_task_key})")
-        else:
-            console.print(f"   New issues: {len(unmatched_groups)}")
-
-    total_files = sum(len(g.get('files', [])) for g in matched_groups + unmatched_groups)
-    console.print(f"   Total files: {total_files}")
-
-    console.print(f"\n[dim]Run without --dry-run to apply changes[/dim]")
+def _show_dry_run_summary(matched_groups, unmatched_groups, task_mgmt, parent_task_key=None, parent_issue=None):
+    """Deprecated: Use show_dry_run_summary from core.propose_display instead."""
+    return show_dry_run_summary(matched_groups, unmatched_groups, task_mgmt, parent_task_key, parent_issue)
 
 
 def _process_matched_groups(
@@ -852,9 +840,14 @@ def _process_matched_groups(
     gitops: GitOps,
     task_mgmt: TaskManagementBase,
     state_manager: StateManager,
-    workflow: dict
+    workflow: dict,
+    single_branch: bool = False
 ):
-    """Process groups that matched with existing issues."""
+    """Process groups that matched with existing issues.
+
+    Args:
+        single_branch: If True, commit directly to current branch (no separate branches)
+    """
 
     auto_transition = workflow.get("auto_transition", True)
     strategy = workflow.get("strategy", "local-merge")
@@ -870,7 +863,7 @@ def _process_matched_groups(
         group["branch"] = branch_name
 
         # Build commit message with issue reference
-        msg = _build_commit_message(
+        msg = build_commit_message(
             title=group['commit_title'],
             body=group.get('commit_body', ''),
             issue_ref=issue_key
@@ -879,25 +872,43 @@ def _process_matched_groups(
         # Create branch and commit using new method
         try:
             files = group.get("files", [])
-            success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
 
-            if success:
-                if strategy == "local-merge":
-                    console.print(f"[green]   ✓ Committed and merged {branch_name}[/green]")
+            if single_branch:
+                # Single branch mode: commit directly to current branch
+                staged_files, failed_files = gitops.stage_files(files)
+                if staged_files:
+                    gitops.commit(msg)
+                    console.print(f"[green]   ✓ Committed: {group['commit_title'][:50]}[/green]")
+
+                    # Add comment to issue
+                    task_mgmt.on_commit(group, {"issue_key": issue_key})
+
+                    # Transition to In Progress if configured
+                    if auto_transition and issue and issue.status.lower() not in ["in progress", "in development"]:
+                        _transition_issue_with_strategy(task_mgmt, issue_key, "after_propose")
                 else:
-                    console.print(f"[green]   ✓ Committed to {branch_name}[/green]")
-
-                # Add comment to issue
-                task_mgmt.on_commit(group, {"issue_key": issue_key})
-
-                # Transition to In Progress if configured
-                if auto_transition and issue.status.lower() not in ["in progress", "in development"]:
-                    _transition_issue_with_strategy(task_mgmt, issue_key, "after_propose")
-
-                # Save to session
-                state_manager.add_session_branch(branch_name, issue_key)
+                    console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
             else:
-                console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
+                # Normal mode: create branch and commit
+                success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
+
+                if success:
+                    if strategy == "local-merge":
+                        console.print(f"[green]   ✓ Committed and merged {branch_name}[/green]")
+                    else:
+                        console.print(f"[green]   ✓ Committed to {branch_name}[/green]")
+
+                    # Add comment to issue
+                    task_mgmt.on_commit(group, {"issue_key": issue_key})
+
+                    # Transition to In Progress if configured
+                    if auto_transition and issue.status.lower() not in ["in progress", "in development"]:
+                        _transition_issue_with_strategy(task_mgmt, issue_key, "after_propose")
+
+                    # Save to session
+                    state_manager.add_session_branch(branch_name, issue_key)
+                else:
+                    console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
 
         except Exception as e:
             console.print(f"[red]   ❌ Error: {e}[/red]")
@@ -911,12 +922,14 @@ def _process_unmatched_groups(
     workflow: dict,
     config: dict,
     llm: LLMClient = None,
-    parent_key: Optional[str] = None
+    parent_key: Optional[str] = None,
+    single_branch: bool = False
 ):
     """Process groups that didn't match any existing issue.
 
     Args:
         parent_key: If provided, create subtasks under this parent issue (--subtasks mode)
+        single_branch: If True, commit directly to current branch (no separate branches)
     """
 
     create_policy = workflow.get("create_missing_issues", "ask")
@@ -1032,7 +1045,7 @@ def _process_unmatched_groups(
         group["issue_key"] = issue_key
 
         # Build commit message
-        msg = _build_commit_message(
+        msg = build_commit_message(
             title=group['commit_title'],
             body=group.get('commit_body', ''),
             issue_ref=issue_key if issue_key else None
@@ -1041,22 +1054,37 @@ def _process_unmatched_groups(
         # Create branch and commit using new method
         try:
             files = group.get("files", [])
-            success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
 
-            if success:
-                if strategy == "local-merge":
-                    console.print(f"[green]   ✓ Committed and merged {branch_name}[/green]")
+            if single_branch:
+                # Single branch mode: commit directly to current branch
+                staged_files, failed_files = gitops.stage_files(files)
+                if staged_files:
+                    gitops.commit(msg)
+                    console.print(f"[green]   ✓ Committed: {group['commit_title'][:50]}[/green]")
+
+                    # Add comment if issue was created
+                    if issue_key and task_mgmt:
+                        task_mgmt.on_commit(group, {"issue_key": issue_key})
                 else:
-                    console.print(f"[green]   ✓ Committed to {branch_name}[/green]")
-
-                # Add comment if issue was created
-                if issue_key and task_mgmt:
-                    task_mgmt.on_commit(group, {"issue_key": issue_key})
-
-                # Save to session
-                state_manager.add_session_branch(branch_name, issue_key)
+                    console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
             else:
-                console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
+                # Normal mode: create branch and commit
+                success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
+
+                if success:
+                    if strategy == "local-merge":
+                        console.print(f"[green]   ✓ Committed and merged {branch_name}[/green]")
+                    else:
+                        console.print(f"[green]   ✓ Committed to {branch_name}[/green]")
+
+                    # Add comment if issue was created
+                    if issue_key and task_mgmt:
+                        task_mgmt.on_commit(group, {"issue_key": issue_key})
+
+                    # Save to session
+                    state_manager.add_session_branch(branch_name, issue_key)
+                else:
+                    console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
 
         except Exception as e:
             console.print(f"[red]   ❌ Error: {e}[/red]")
@@ -1183,7 +1211,7 @@ def _process_subtasks_mode(
             subtask_branch = task_mgmt.format_branch_name(subtask_key, commit_title)
 
             # Build commit message
-            msg = _build_commit_message(
+            msg = build_commit_message(
                 title=group['commit_title'],
                 body=group.get('commit_body', ''),
                 issue_ref=subtask_key
@@ -1258,79 +1286,10 @@ def _process_subtasks_mode(
     console.print(f"\n[bold green]✅ Created {len(created_subtasks)} subtask(s) under {parent_task_key}[/bold green]")
 
 
-def _show_task_commit_dry_run(
-    task_id: str,
-    changes: List[Dict],
-    gitops: GitOps,
-    task_mgmt: Optional[TaskManagementBase]
-):
-    """Show dry-run summary for --task mode (single commit to specific task)."""
-
-    console.print(f"\n[bold yellow]═══ DRY RUN SUMMARY ═══[/bold yellow]")
-
-    # Resolve issue key
-    issue_key = task_id
-    issue = None
-
-    if task_mgmt and task_mgmt.enabled:
-        # If task_id is just a number, prepend project key
-        if task_id.isdigit() and hasattr(task_mgmt, 'project_key') and task_mgmt.project_key:
-            issue_key = f"{task_mgmt.project_key}-{task_id}"
-
-        # Fetch issue details
-        with console.status(f"Fetching task {issue_key}..."):
-            issue = task_mgmt.get_issue(issue_key)
-
-        if not issue:
-            console.print(f"\n[red]❌ Task {issue_key} not found[/red]")
-            return
-
-    # Show task info
-    console.print(f"\n[bold cyan]📋 Target Task:[/bold cyan]")
-    if issue:
-        console.print(f"   [bold]{issue_key}[/bold]: {issue.summary}")
-        console.print(f"   [dim]Status: {issue.status}[/dim]")
-        if issue.description:
-            desc_preview = issue.description[:150].replace('\n', ' ')
-            console.print(f"   [dim]Description: {desc_preview}...[/dim]")
-    else:
-        console.print(f"   [bold]{issue_key}[/bold] [dim](no task management)[/dim]")
-
-    # Extract file paths
-    file_paths = [c["file"] if isinstance(c, dict) else c for c in changes]
-
-    # Generate commit info
-    if issue:
-        commit_title = f"{issue_key}: {issue.summary}"
-    else:
-        commit_title = f"Changes for {issue_key}"
-
-    # Format branch name
-    if task_mgmt and hasattr(task_mgmt, 'format_branch_name') and issue:
-        branch_name = task_mgmt.format_branch_name(issue_key, issue.summary)
-    else:
-        branch_name = f"feature/{issue_key.lower()}"
-
-    # Show commit details
-    console.print(f"\n[bold green]📝 Commit to create:[/bold green]")
-    console.print(f"   [dim]Title:[/dim]   {commit_title[:70]}{'...' if len(commit_title) > 70 else ''}")
-    console.print(f"   [dim]Branch:[/dim]  {branch_name}")
-    console.print(f"   [dim]Files:[/dim]   {len(file_paths)}")
-
-    # Show file list
-    for f in file_paths[:5]:
-        console.print(f"            [dim]• {f}[/dim]")
-    if len(file_paths) > 5:
-        console.print(f"            [dim]... +{len(file_paths) - 5} more[/dim]")
-
-    # Summary
-    console.print(f"\n[bold]─────────────────────────────────────────[/bold]")
-    console.print(f"[bold]Summary:[/bold]")
-    console.print(f"   All {len(file_paths)} files will be committed to [bold]{issue_key}[/bold]")
-    if issue:
-        console.print(f"   Task: {issue.summary[:50]}{'...' if len(issue.summary) > 50 else ''}")
-
-    console.print(f"\n[dim]Run without --dry-run to apply changes[/dim]")
+def _show_task_commit_dry_run(task_id, changes, gitops, task_mgmt):
+    """Deprecated: Use show_task_commit_dry_run from core.propose_display instead."""
+    # Note: gitops parameter is ignored in the new implementation
+    return show_task_commit_dry_run(task_id, changes, task_mgmt)
 
 
 def _process_task_commit(
@@ -1411,7 +1370,7 @@ def _process_task_commit(
         return
 
     # Build full commit message
-    msg = _build_commit_message(
+    msg = build_commit_message(
         title=commit_title,
         body=commit_body,
         issue_ref=issue_key
@@ -1600,7 +1559,7 @@ def _enhance_groups_with_diffs(
     desc_prompt_path = None
 
     if task_mgmt and hasattr(task_mgmt, 'has_user_prompt'):
-        from ..core.config import RETGIT_DIR
+        from ..core.common.config import RETGIT_DIR
         has_title = task_mgmt.has_user_prompt("issue_title")
         has_desc = task_mgmt.has_user_prompt("issue_description")
         if has_title or has_desc:
@@ -2006,9 +1965,41 @@ def _ask_and_push_parent_branch(
             gitops.push(parent_branch)
             console.print(f"[green]✓ {parent_branch} pushed[/green]")
 
-            # Show next steps based on strategy
+            # For merge-request strategy, create PR and show URL
             if strategy == "merge-request":
-                console.print(f"[cyan]PR oluşturmak için: gh pr create --base main --head {parent_branch}[/cyan]")
+                code_hosting = get_code_hosting(config)
+                if code_hosting and code_hosting.enabled:
+                    # Get base branch from config or default to main
+                    base_branch = config.get("git", {}).get("base_branch", "main")
+
+                    # Create PR title from parent task key
+                    pr_title = f"{parent_task_key}: Parent task branch"
+                    pr_body = f"Parent task branch for {parent_task_key}\n\nContains all subtask commits merged."
+
+                    try:
+                        pr_url = code_hosting.create_pull_request(
+                            title=pr_title,
+                            body=pr_body,
+                            head_branch=parent_branch,
+                            base_branch=base_branch
+                        )
+                        if pr_url:
+                            console.print(f"[green]✓ PR created: {pr_url}[/green]")
+                            # Send notification if configured
+                            try:
+                                NotificationService(config).send_pr_created(parent_branch, pr_url, parent_task_key)
+                            except Exception:
+                                pass
+                        else:
+                            console.print(f"[yellow]PR oluşturulamadı. Manuel oluşturmak için:[/yellow]")
+                            console.print(f"[cyan]gh pr create --base {base_branch} --head {parent_branch}[/cyan]")
+                    except Exception as e:
+                        console.print(f"[yellow]PR oluşturulurken hata: {e}[/yellow]")
+                        console.print(f"[cyan]Manuel PR: gh pr create --base {base_branch} --head {parent_branch}[/cyan]")
+                else:
+                    # No code hosting configured, show manual command
+                    base_branch = config.get("git", {}).get("base_branch", "main")
+                    console.print(f"[cyan]PR oluşturmak için: gh pr create --base {base_branch} --head {parent_branch}[/cyan]")
 
             return True
         except Exception as e:
@@ -2021,6 +2012,453 @@ def _ask_and_push_parent_branch(
         return False
 
 
+# =============================================================================
+# INTERACTIVE SETUP
+# =============================================================================
+
+def _interactive_setup(
+    config: dict,
+    task_mgmt: Optional[TaskManagementBase]
+) -> dict:
+    """
+    Run interactive wizard to select propose options.
+
+    Behavior changes based on task_mgmt availability:
+    - With task_mgmt: Full options (auto, task, multi modes)
+    - Without task_mgmt: Only auto mode, no issue creation options
+
+    Args:
+        config: Configuration dict
+        task_mgmt: Task management integration (may be None)
+
+    Returns:
+        Dict with selected options: mode, task, detailed, create_policy, subtask_mode
+    """
+    options = {}
+    has_task_mgmt = task_mgmt and task_mgmt.enabled
+
+    console.print("\n[bold cyan]🔧 RG Propose - Interactive Setup[/bold cyan]\n")
+
+    # Show warning if no task management
+    if not has_task_mgmt:
+        console.print("[yellow]⚠️  Task management entegrasyonu bulunamadı[/yellow]")
+        console.print("[dim]   Task-related özellikler devre dışı[/dim]\n")
+
+    # 1. Analysis Mode - only show all options if task_mgmt available
+    if has_task_mgmt:
+        mode_choice = Prompt.ask(
+            "Analiz modu",
+            choices=["auto", "task", "multi"],
+            default="auto"
+        )
+        options["mode"] = mode_choice
+
+        # 2. If task mode, ask for task ID
+        if mode_choice == "task":
+            task_id = Prompt.ask("Task ID (e.g., SCRUM-123)")
+            options["task"] = task_id
+
+        # 3. Subtask mode - ask for all modes when task management is available
+        # (auto mode can auto-detect task from branch, so subtask is still relevant)
+        console.print("\n[dim]Subtask modu: Her dosya grubu için parent task altında subtask oluşturur[/dim]")
+        if mode_choice == "auto":
+            console.print("[dim]   (auto modda branch'ten task tespit edilirse subtask oluşturulur)[/dim]")
+        options["subtask_mode"] = Confirm.ask("Subtask modu aktif olsun mu?", default=True)
+
+        # 4. Issue creation policy (only relevant if not using subtask mode)
+        if not options.get("subtask_mode"):
+            create_policy = Prompt.ask(
+                "Issue oluşturma politikası",
+                choices=["auto", "ask", "skip"],
+                default="ask"
+            )
+            options["create_policy"] = create_policy
+        else:
+            options["create_policy"] = "auto"  # Subtask mode always creates
+    else:
+        # No task management - only auto mode
+        options["mode"] = "auto"
+        options["create_policy"] = "skip"
+        options["subtask_mode"] = False
+
+    # 5. Detailed mode (always available)
+    options["detailed"] = Confirm.ask("Detaylı analiz (diff içerikleri)?", default=False)
+
+    # 6. Save preferences
+    save = Confirm.ask("Bu tercihleri kaydet?", default=False)
+    if save:
+        _save_interactive_preferences(options, config)
+        console.print("[green]✓ Tercihler kaydedildi[/green]")
+
+    return options
+
+
+def _save_interactive_preferences(options: dict, config: dict) -> None:
+    """Save interactive mode preferences to config."""
+    try:
+        config_manager = ConfigManager()
+        full_config = config_manager.load()
+
+        # Save to propose section
+        if "propose" not in full_config:
+            full_config["propose"] = {}
+
+        full_config["propose"]["default_mode"] = options.get("mode", "auto")
+        full_config["propose"]["detailed"] = options.get("detailed", False)
+        full_config["propose"]["create_policy"] = options.get("create_policy", "ask")
+
+        config_manager.save(full_config)
+    except Exception as e:
+        console.print(f"[yellow]Tercihler kaydedilemedi: {e}[/yellow]")
+
+
+# =============================================================================
+# MULTI-TASK MODE
+# =============================================================================
+
+def _process_multi_task_mode(
+    changes: List[Dict],
+    gitops: GitOps,
+    task_mgmt: TaskManagementBase,
+    state_manager: StateManager,
+    config: dict,
+    task_filter: Optional[str] = None,
+    verbose: bool = False,
+    detailed: bool = False,
+    dry_run: bool = False,
+    subtask_mode: bool = True
+) -> None:
+    """
+    Process changes for multiple parent tasks.
+
+    This mode:
+    1. Fetches active tasks (all or filtered by task_filter)
+    2. Uses LLM to determine which files belong to which task
+    3. If subtask_mode: Creates subtasks under each parent task
+    4. If not subtask_mode: Just groups commits by parent task
+    5. Reports unmatched files
+
+    Args:
+        changes: List of file changes
+        gitops: Git operations helper
+        task_mgmt: Task management integration
+        state_manager: State manager
+        config: Configuration dict
+        task_filter: Optional comma-separated task IDs to filter
+        verbose: Show verbose output
+        detailed: Use detailed analysis with diffs
+        dry_run: Only show what would be done
+        subtask_mode: If True, create subtasks under parent tasks
+    """
+    original_branch = gitops.original_branch
+    workflow_strategy = config.get("workflow", {}).get("strategy", "local-merge")
+
+    # 1. Fetch tasks - either from filter or all active
+    if task_filter:
+        # Parse comma-separated task IDs
+        task_ids = [t.strip() for t in task_filter.split(",")]
+        console.print(f"\n[cyan]Fetching specified tasks: {', '.join(task_ids)}...[/cyan]")
+
+        parent_tasks = []
+        for task_id in task_ids:
+            # Handle numeric IDs (e.g., "123" -> "SCRUM-123")
+            if task_id.isdigit() and hasattr(task_mgmt, 'project_key') and task_mgmt.project_key:
+                task_id = f"{task_mgmt.project_key}-{task_id}"
+            issue = task_mgmt.get_issue(task_id)
+            if issue:
+                parent_tasks.append(issue)
+            else:
+                console.print(f"[yellow]⚠️ Task {task_id} not found[/yellow]")
+    else:
+        # Fetch ALL active issues assigned to user
+        console.print("\n[cyan]Fetching all active tasks assigned to me...[/cyan]")
+        parent_tasks = task_mgmt.get_my_active_issues()
+
+    if not parent_tasks:
+        console.print("[yellow]No active tasks found. Use standard mode instead.[/yellow]")
+        return
+
+    # Filter tasks by project (epic name or labels should contain project name)
+    # Get project name from config first, fallback to git remote
+    project_config = config.get("project", {})
+    project_name = project_config.get("name") or gitops.get_project_name()
+
+    # Initialize filtered_tasks at function scope for later use
+    filtered_tasks = []
+
+    if project_name:
+        excluded_tasks = []
+
+        import re
+
+        def matches_project_name(text: str) -> bool:
+            """Check if text contains project name as whole word (case-insensitive)."""
+            if not text:
+                return False
+            # Word boundary ile tam kelime eşleşmesi
+            pattern = re.compile(r'\b' + re.escape(project_name) + r'\b', re.IGNORECASE)
+            return bool(pattern.search(text))
+
+        def task_matches_project(task) -> bool:
+            """Check if task matches project via epic summary OR labels."""
+            # 1. Epic/parent summary kontrolü
+            epic_summary = getattr(task, 'parent_summary', None) or ""
+            if matches_project_name(epic_summary):
+                return True
+
+            # 2. Labels kontrolü
+            labels = getattr(task, 'labels', None) or []
+            for label in labels:
+                if matches_project_name(label):
+                    return True
+
+            return False
+
+        for t in parent_tasks:
+            # Check if task matches project via epic summary OR labels
+            if task_matches_project(t):
+                filtered_tasks.append(t)
+            else:
+                excluded_tasks.append(t)
+
+        if excluded_tasks:
+            console.print(f"\n[yellow]⚠️ Filtered out {len(excluded_tasks)} tasks from other projects:[/yellow]")
+            for t in excluded_tasks:
+                epic_info = getattr(t, 'parent_summary', '') or getattr(t, 'parent_key', '')
+                if epic_info:
+                    console.print(f"  [dim]• {t.key}: {t.summary[:40]}... (Epic: {epic_info[:30]})[/dim]")
+                else:
+                    console.print(f"  [dim]• {t.key}: {t.summary[:50]}[/dim]")
+
+        parent_tasks = filtered_tasks
+
+    if not parent_tasks:
+        console.print("[yellow]No matching tasks found for this project. Use standard mode instead.[/yellow]")
+        return
+
+    console.print(f"\n[green]Found {len(parent_tasks)} active tasks for project '{project_name}'[/green]")
+    for t in parent_tasks:
+        epic_info = getattr(t, 'parent_summary', '') or getattr(t, 'parent_key', '')
+        if epic_info:
+            console.print(f"  [dim]• {t.key}: {t.summary[:40]}... ({epic_info[:25]})[/dim]")
+        else:
+            console.print(f"  [dim]• {t.key}: {t.summary[:50]}[/dim]")
+
+    # 2. Build and send prompt
+    llm = LLMClient(config.get("llm", {}))
+    prompt_manager = PromptManager(config.get("llm", {}))
+    issue_language = getattr(task_mgmt, 'issue_language', None)
+
+    prompt = prompt_manager.get_multi_task_prompt(
+        changes=changes,
+        parent_tasks=parent_tasks,
+        issue_language=issue_language
+    )
+
+    if verbose:
+        console.print(f"\n[dim]Prompt length: {len(prompt)} characters[/dim]")
+
+    console.print("\n[yellow]AI analyzing changes for multiple tasks...[/yellow]")
+    result, raw_output = llm.generate_multi_task_groups(prompt, return_raw=True)
+
+    if verbose:
+        console.print(f"\n[dim]Raw AI output:[/dim]")
+        console.print(f"[dim]{raw_output[:1000]}...[/dim]")
+
+    # 3. Handle dry run
+    if dry_run:
+        from ..core.propose.display import show_multi_task_dry_run
+        show_multi_task_dry_run(result, task_mgmt, subtask_mode)
+        return
+
+    # 4. Display results
+    from ..core.propose.display import show_multi_task_summary
+    show_multi_task_summary(result, subtask_mode)
+
+    # 5. Confirm and process each task
+    confirm_msg = "\nProceed with subtask creation?" if subtask_mode else "\nProceed with commits?"
+    if not Confirm.ask(confirm_msg):
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+
+    # 6. Initialize session tracking
+    state = state_manager.load()
+    if "session" not in state:
+        state["session"] = {}
+    state["session"]["base_branch"] = original_branch
+    state["session"]["branches"] = []
+    state["session"]["issues"] = []
+    state["session"]["subtask_issues"] = []
+
+    # 7. Process each task assignment
+    for assignment in result.get("task_assignments", []):
+        parent_key = assignment.get("task_key")
+        subtask_groups = assignment.get("subtask_groups", [])
+
+        if not subtask_groups:
+            continue
+
+        parent_issue = task_mgmt.get_issue(parent_key)
+        if not parent_issue:
+            console.print(f"[yellow]⚠️ Task {parent_key} not found, skipping[/yellow]")
+            continue
+
+        console.print(f"\n[bold cyan]Processing {parent_key}: {parent_issue.summary[:40]}...[/bold cyan]")
+
+        # Process subtasks for this parent
+        for group in subtask_groups:
+            files = group.get("files", [])
+            commit_title = group.get("commit_title", "changes")
+            issue_title = group.get("issue_title", commit_title)
+            issue_description = group.get("issue_description", "")
+            commit_body = group.get("commit_body", "")
+
+            if not files:
+                continue
+
+            try:
+                if subtask_mode:
+                    # Create subtask under parent
+                    console.print(f"\n  [cyan]Creating subtask: {issue_title[:50]}...[/cyan]")
+
+                    subtask_key = task_mgmt.create_subtask(
+                        parent_key=parent_key,
+                        summary=issue_title,
+                        description=issue_description or f"Files:\n" + "\n".join(f"- {f}" for f in files)
+                    )
+
+                    if subtask_key:
+                        console.print(f"  [green]✓ Created {subtask_key}[/green]")
+
+                        # Create branch and commit
+                        branch_name = task_mgmt.format_branch_name(subtask_key, issue_title)
+
+                        if workflow_strategy == "merge-request":
+                            # Create separate branch for each subtask
+                            gitops.checkout_or_create_branch(branch_name)
+                            gitops.stage_files(files)
+                            full_commit = build_commit_message(commit_title, commit_body)
+                            gitops.commit(full_commit)
+                            console.print(f"  [green]✓ Committed to {branch_name}[/green]")
+
+                            # Track branch for push
+                            state["session"]["branches"].append({
+                                "branch": branch_name,
+                                "issue_key": subtask_key,
+                                "files": files
+                            })
+                        else:
+                            # local-merge: commit directly to current branch
+                            gitops.stage_files(files)
+                            full_commit = build_commit_message(commit_title, commit_body)
+                            gitops.commit(full_commit)
+                            console.print(f"  [green]✓ Committed: {commit_title}[/green]")
+
+                            # Track as merged branch
+                            state["session"]["branches"].append({
+                                "branch": original_branch,
+                                "issue_key": subtask_key,
+                                "files": files
+                            })
+
+                        # Track subtask for issue transition
+                        state["session"]["subtask_issues"].append(subtask_key)
+
+                        # Transition subtask if configured
+                        if config.get("workflow", {}).get("auto_transition", False):
+                            task_mgmt.transition_issue(subtask_key, "start")
+                    else:
+                        console.print(f"  [red]✗ Failed to create subtask[/red]")
+
+                else:
+                    # No subtask mode - just commit with parent task reference
+                    console.print(f"\n  [cyan]Committing: {commit_title[:50]}...[/cyan]")
+
+                    # Prefix commit with parent task key
+                    prefixed_title = f"{parent_key}: {commit_title}"
+                    full_commit = build_commit_message(prefixed_title, commit_body)
+
+                    if workflow_strategy == "merge-request":
+                        # Create branch for parent task
+                        branch_name = task_mgmt.format_branch_name(parent_key, issue_title)
+
+                        # Check if we're already on this branch
+                        current = gitops.repo.active_branch.name
+                        if current != branch_name:
+                            try:
+                                gitops.repo.git.checkout(branch_name)
+                            except Exception:
+                                gitops.checkout_or_create_branch(branch_name)
+
+                        gitops.stage_files(files)
+                        gitops.commit(full_commit)
+                        console.print(f"  [green]✓ Committed to {branch_name}[/green]")
+
+                        # Track branch (avoid duplicates)
+                        existing_branches = [b["branch"] for b in state["session"]["branches"]]
+                        if branch_name not in existing_branches:
+                            state["session"]["branches"].append({
+                                "branch": branch_name,
+                                "issue_key": parent_key,
+                                "files": files
+                            })
+                        else:
+                            # Add files to existing branch entry
+                            for b in state["session"]["branches"]:
+                                if b["branch"] == branch_name:
+                                    b["files"].extend(files)
+                                    break
+                    else:
+                        # local-merge: commit to current branch
+                        gitops.stage_files(files)
+                        gitops.commit(full_commit)
+                        console.print(f"  [green]✓ Committed: {prefixed_title[:60]}[/green]")
+
+                        state["session"]["branches"].append({
+                            "branch": original_branch,
+                            "issue_key": parent_key,
+                            "files": files
+                        })
+
+                    # Track parent issue for completion
+                    if parent_key not in state["session"]["issues"]:
+                        state["session"]["issues"].append(parent_key)
+
+            except Exception as e:
+                console.print(f"  [red]✗ Failed: {e}[/red]")
+                if verbose:
+                    import traceback
+                    console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+
+    # 8. Save session
+    state_manager.save(state)
+    console.print(f"\n[green]✓ Session saved ({len(state['session']['branches'])} branches)[/green]")
+
+    # 9. Report unmatched files
+    unmatched = result.get("unmatched_files", [])
+    if unmatched:
+        console.print(f"\n[yellow]Unmatched files ({len(unmatched)}):[/yellow]")
+        for f in unmatched[:10]:
+            console.print(f"  [dim]• {f}[/dim]")
+        if len(unmatched) > 10:
+            console.print(f"  [dim]... and {len(unmatched) - 10} more[/dim]")
+
+    # 10. Return to original branch
+    try:
+        gitops.checkout_branch(original_branch)
+        console.print(f"\n[green]✓ Returned to {original_branch}[/green]")
+    except Exception:
+        pass
+
+    # 11. Show next steps
+    console.print("\n[bold cyan]Next steps:[/bold cyan]")
+    if workflow_strategy == "merge-request":
+        console.print("  [dim]• rg push --pr   - Push branches and create merge requests[/dim]")
+    else:
+        console.print("  [dim]• rg push        - Push commits to remote[/dim]")
+    console.print("  [dim]• rg session     - View current session[/dim]")
+
+
 def _process_task_filtered_mode(
     task_id: str,
     changes: List[Dict],
@@ -2029,14 +2467,15 @@ def _process_task_filtered_mode(
     state_manager: StateManager,
     config: dict,
     verbose: bool = False,
-    detailed: bool = False
+    detailed: bool = False,
+    force: bool = False
 ) -> None:
     """
     Process task-filtered mode: analyze files for relevance to parent task.
 
     This mode:
     1. Fetches parent task details
-    2. Uses LLM to analyze which files relate to the parent task
+    2. Uses LLM to analyze which files relate to the parent task (unless force=True)
     3. Creates subtasks only for related files
     4. Matches unrelated files to user's other open tasks
     5. Reports truly unmatched files
@@ -2052,6 +2491,7 @@ def _process_task_filtered_mode(
         config: Configuration dict
         verbose: Enable verbose output
         detailed: Enable detailed mode
+        force: Skip LLM relevance check, commit all files to parent task
     """
     # Save original branch to return to at the end
     original_branch = gitops.original_branch
@@ -2090,7 +2530,7 @@ def _process_task_filtered_mode(
         # Get issue language if configured
         issue_language = getattr(task_mgmt, 'issue_language', None)
 
-        # Create LLM and prompt
+        # Use LLM to analyze and group files
         console.print("\n[yellow]Analyzing file relevance to parent task...[/yellow]")
         llm = LLMClient(config.get("llm", {}))
         prompt_manager = PromptManager(config.get("llm", {}))
@@ -2115,13 +2555,47 @@ def _process_task_filtered_mode(
             console.print(f"Other task matches: {len(result['other_task_matches'])}")
             console.print(f"Unmatched files: {len(result['unmatched_files'])}")
 
-        # Show summary
-        console.print("\n[bold]Analysis Results:[/bold]")
-        console.print(f"  [green]✓ {len(result['related_groups'])} subtask(s) for {parent_task_key}[/green]")
-        if result['other_task_matches']:
-            console.print(f"  [blue]→ {len(result['other_task_matches'])} group(s) match other tasks[/blue]")
-        if result['unmatched_files']:
-            console.print(f"  [yellow]○ {len(result['unmatched_files'])} file(s) unmatched[/yellow]")
+        # Force mode: move all groups to related_groups (skip task relevance filtering)
+        if force:
+            console.print("\n[yellow]Force mode: Tüm dosyalar parent task ile ilişkili kabul ediliyor[/yellow]")
+
+            # Move other_task_matches to related_groups
+            for match in result.get('other_task_matches', []):
+                result['related_groups'].append({
+                    'files': match.get('files', []),
+                    'commit_title': match.get('commit_title', 'Changes'),
+                    'commit_body': match.get('commit_body', ''),
+                    'issue_title': match.get('issue_title', match.get('commit_title', 'Changes')),
+                    'issue_description': match.get('issue_description', ''),
+                    'relevance_reason': f"Force mode - originally matched {match.get('issue_key', 'other task')}"
+                })
+
+            # Move unmatched_files to a new related_group
+            if result.get('unmatched_files'):
+                result['related_groups'].append({
+                    'files': result['unmatched_files'],
+                    'commit_title': 'chore: miscellaneous changes',
+                    'commit_body': '',
+                    'issue_title': 'Diğer değişiklikler',
+                    'issue_description': 'Force mode ile eklenen dosyalar',
+                    'relevance_reason': 'Force mode - originally unmatched files'
+                })
+
+            # Clear other categories
+            result['other_task_matches'] = []
+            result['unmatched_files'] = []
+
+            console.print(f"\n[bold]Force Mode:[/bold]")
+            total_files = sum(len(g.get('files', [])) for g in result['related_groups'])
+            console.print(f"  [green]✓ {total_files} dosya {len(result['related_groups'])} subtask olarak {parent_task_key} altına commit edilecek[/green]")
+        else:
+            # Normal mode: show summary with filtering
+            console.print("\n[bold]Analysis Results:[/bold]")
+            console.print(f"  [green]✓ {len(result['related_groups'])} subtask(s) for {parent_task_key}[/green]")
+            if result['other_task_matches']:
+                console.print(f"  [blue]→ {len(result['other_task_matches'])} group(s) match other tasks[/blue]")
+            if result['unmatched_files']:
+                console.print(f"  [yellow]○ {len(result['unmatched_files'])} file(s) unmatched[/yellow]")
 
         # Get workflow config
         workflow = config.get("workflow", {})
@@ -2212,14 +2686,17 @@ def _process_task_filtered_mode(
         # 4. Handle unmatched files
         if result['unmatched_files']:
             console.print(f"\n[bold yellow]Handling unmatched files...[/bold yellow]")
-            _handle_unmatched_files(
+            excluded_files = _handle_unmatched_files(
                 files=result['unmatched_files'],
                 gitops=gitops,
                 task_mgmt=task_mgmt,
                 state_manager=state_manager,
                 config=config,
-                strategy=strategy
+                strategy=strategy,
+                filtered_tasks=filtered_tasks  # Proje ile eşleşen tasklar
             )
+            if excluded_files:
+                console.print(f"\n[yellow]⚠️  {len(excluded_files)} dosya commitlenmedi[/yellow]")
 
         # 5. Ask about pushing parent branch (only if subtasks were created)
         if result['related_groups']:
@@ -2321,7 +2798,7 @@ def _process_related_groups_as_subtasks(
 
         # Create subtask branch FROM parent branch, commit, and merge back to parent
         subtask_branch = task_mgmt.format_branch_name(subtask_key or parent_task_key, commit_title)
-        msg = _build_commit_message(
+        msg = build_commit_message(
             title=commit_title,
             body=commit_body,
             issue_ref=subtask_key if subtask_key else None
@@ -2388,7 +2865,7 @@ def _process_other_task_matches(
         # Ask user for confirmation
         if Confirm.ask(f"   Commit these {len(files)} file(s) to {issue_key}?", default=True):
             branch_name = task_mgmt.format_branch_name(issue_key, commit_title)
-            msg = _build_commit_message(
+            msg = build_commit_message(
                 title=commit_title,
                 body="",
                 issue_ref=issue_key
@@ -2411,73 +2888,131 @@ def _handle_unmatched_files(
     task_mgmt: TaskManagementBase,
     state_manager: StateManager,
     config: dict,
-    strategy: str = "local-merge"
-) -> None:
+    strategy: str = "local-merge",
+    filtered_tasks: List = None
+) -> List[str]:
     """
     Handle files that don't match any task.
 
+    Uses create_branch_and_commit() for all commit options to respect
+    the workflow strategy (local-merge vs merge-request).
+
     Options:
-    1. Create new task for them
-    2. Leave in working directory (skip)
-    3. Commit without task association
+    1. Assign to existing filtered task
+    2. Create new task for them
+    3. Commit without task association (new branch)
+    4. Leave in working directory (skip)
+
+    Returns:
+        List of files that were excluded (left in working directory)
     """
     if not files:
-        return
+        return []
 
-    console.print(f"\n[yellow]{len(files)} file(s) don't match any task:[/yellow]")
+    excluded_files = []
+
+    console.print(f"\n[yellow]⚠️  {len(files)} dosya hiçbir task ile eşleşmedi:[/yellow]")
     for f in files[:10]:
-        console.print(f"[dim]   - {f}[/dim]")
+        console.print(f"  [dim]• {f}[/dim]")
     if len(files) > 10:
-        console.print(f"[dim]   ... and {len(files) - 10} more[/dim]")
+        console.print(f"  [dim]... ve {len(files) - 10} dosya daha[/dim]")
 
-    console.print("\n[bold]Options:[/bold]")
-    console.print("  [1] Create new task for these files")
-    console.print("  [2] Leave in working directory (skip)")
-    console.print("  [3] Commit without task association")
+    # Toplu işlem seçenekleri
+    console.print("\n[bold]Seçenekler:[/bold]")
+    if filtered_tasks:
+        console.print("  [1] Mevcut tasklerden birine ata")
+    console.print("  [2] Yeni task oluştur")
+    console.print("  [3] Tasksız commit at (yeni branch)")
+    console.print("  [4] Working tree'de bırak")
 
-    choice = Prompt.ask("Select option", choices=["1", "2", "3"], default="2")
+    choices = ["1", "2", "3", "4"] if filtered_tasks else ["2", "3", "4"]
+    choice = Prompt.ask("Seçim", choices=choices, default="4")
 
-    if choice == "1":
-        # Create new task
-        summary = Prompt.ask("New task summary")
-        description = Prompt.ask("Description (optional)", default="")
+    if choice == "1" and filtered_tasks:
+        # Mevcut tasklerden seç
+        console.print("\n[bold]Mevcut taskler:[/bold]")
+        for i, task in enumerate(filtered_tasks, 1):
+            console.print(f"  [{i}] {task.key}: {task.summary[:50]}")
 
-        issue_key = task_mgmt.create_issue(
-            summary=summary,
-            description=description,
-            issue_type="task"
-        )
+        task_choice = Prompt.ask("Task numarası seçin")
+        try:
+            idx = int(task_choice) - 1
+            if 0 <= idx < len(filtered_tasks):
+                selected_task = filtered_tasks[idx]
+                branch_name = task_mgmt.format_branch_name(selected_task.key, selected_task.summary)
+                msg = build_commit_message(
+                    title=f"chore: add files to {selected_task.key}",
+                    body="",
+                    issue_ref=selected_task.key
+                )
+                # Strateji'ye göre branch oluştur ve commit et
+                success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
+                if success:
+                    if strategy == "local-merge":
+                        console.print(f"[green]✓ Committed and merged {branch_name}[/green]")
+                    else:
+                        console.print(f"[green]✓ Committed to {branch_name}[/green]")
+                    state_manager.add_session_branch(branch_name, selected_task.key)
+            else:
+                console.print("[yellow]Geçersiz seçim, dosyalar working tree'de bırakıldı[/yellow]")
+                excluded_files = files
+        except ValueError:
+            console.print("[yellow]Geçersiz giriş, dosyalar working tree'de bırakıldı[/yellow]")
+            excluded_files = files
 
-        if issue_key:
-            console.print(f"[green]✓ Created task: {issue_key}[/green]")
-            branch_name = task_mgmt.format_branch_name(issue_key, summary)
-            msg = _build_commit_message(
-                title=summary,
-                body="",
-                issue_ref=issue_key
+    elif choice == "2":
+        # Yeni task oluştur
+        summary = Prompt.ask("Yeni task başlığı")
+        if Confirm.ask(f"'{summary}' taskını oluştur?"):
+            issue_key = task_mgmt.create_issue(
+                summary=summary,
+                description="",
+                issue_type="task"
             )
-
-            success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
-            if success:
-                console.print(f"[green]✓ Committed to {branch_name}[/green]")
-                state_manager.add_session_branch(branch_name, issue_key)
+            if issue_key:
+                console.print(f"[green]✓ Task oluşturuldu: {issue_key}[/green]")
+                branch_name = task_mgmt.format_branch_name(issue_key, summary)
+                msg = build_commit_message(title=summary, body="", issue_ref=issue_key)
+                success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
+                if success:
+                    if strategy == "local-merge":
+                        console.print(f"[green]✓ Committed and merged {branch_name}[/green]")
+                    else:
+                        console.print(f"[green]✓ Committed to {branch_name}[/green]")
+                    state_manager.add_session_branch(branch_name, issue_key)
+            else:
+                console.print("[red]❌ Task oluşturulamadı[/red]")
+                excluded_files = files
         else:
-            console.print("[red]❌ Failed to create task[/red]")
+            console.print("[dim]Task oluşturulmadı, dosyalar working tree'de bırakıldı[/dim]")
+            excluded_files = files
 
     elif choice == "3":
-        # Commit without task
-        commit_title = Prompt.ask("Commit title", default="chore: miscellaneous changes")
-        branch_name = f"chore/{commit_title.lower().replace(' ', '-').replace(':', '')[:30]}"
+        # Tasksız commit - yine de yeni branch aç
+        commit_title = Prompt.ask("Commit başlığı", default="chore: miscellaneous changes")
+        # Branch adı oluştur (task ref olmadan)
+        clean_title = commit_title.lower()
+        clean_title = "".join(c if c.isalnum() or c == " " else "" for c in clean_title)
+        clean_title = clean_title.strip().replace(" ", "-")[:40]
+        branch_name = f"chore/{clean_title}"
 
-        success = gitops.create_branch_and_commit(branch_name, files, commit_title, strategy=strategy)
+        msg = commit_title  # Task ref yok
+        success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
         if success:
-            console.print(f"[green]✓ Committed to {branch_name}[/green]")
-            state_manager.add_session_branch(branch_name, None)
+            if strategy == "local-merge":
+                console.print(f"[green]✓ Committed and merged {branch_name}[/green]")
+            else:
+                console.print(f"[green]✓ Committed to {branch_name}[/green]")
+            state_manager.add_session_branch(branch_name, None)  # issue_key = None
         else:
-            console.print("[red]❌ Failed to commit[/red]")
+            console.print("[red]❌ Commit başarısız[/red]")
+            excluded_files = files
 
-    else:  # choice == "2"
-        console.print("[dim]Files left in working directory[/dim]")
+    else:  # choice == "4"
+        console.print("[dim]Dosyalar working tree'de bırakıldı[/dim]")
+        excluded_files = files
+
+    return excluded_files
 
 
 def _show_task_filtered_dry_run(

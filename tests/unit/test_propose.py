@@ -374,7 +374,7 @@ class TestTransitionHelpers:
 class TestShowHelpers:
     """Tests for display helper functions."""
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_show_active_issues_displays_table(self, mock_console):
         """Test _show_active_issues displays issues in a table."""
         from redgit.commands.propose import _show_active_issues
@@ -747,7 +747,7 @@ class TestCategorizeGroups:
 class TestShowGroupsSummary:
     """Tests for _show_groups_summary function."""
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_displays_matched_groups(self, mock_console):
         """Test matched groups are displayed."""
         from redgit.commands.propose import _show_groups_summary
@@ -764,7 +764,7 @@ class TestShowGroupsSummary:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("PROJ-1" in c for c in calls)
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_displays_unmatched_groups(self, mock_console):
         """Test unmatched groups are displayed."""
         from redgit.commands.propose import _show_groups_summary
@@ -779,7 +779,7 @@ class TestShowGroupsSummary:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("No matching issue" in c or "bug fix" in c for c in calls)
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_new_issues_message_with_task_mgmt(self, mock_console):
         """Test shows 'New issues will be created' with task mgmt."""
         from redgit.commands.propose import _show_groups_summary
@@ -800,7 +800,7 @@ class TestShowGroupsSummary:
 class TestShowVerboseGroups:
     """Tests for _show_verbose_groups function."""
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_displays_group_details(self, mock_console):
         """Test verbose output includes all group details."""
         from redgit.commands.propose import _show_verbose_groups
@@ -821,7 +821,7 @@ class TestShowVerboseGroups:
         assert any("Group 1" in c for c in calls)
         assert any("feat: test" in c or "commit_title" in c for c in calls)
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_file_count(self, mock_console):
         """Test shows file count in verbose output."""
         from redgit.commands.propose import _show_verbose_groups
@@ -839,7 +839,7 @@ class TestShowVerboseGroups:
 class TestShowDryRunSummary:
     """Tests for _show_dry_run_summary function."""
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_dry_run_header(self, mock_console):
         """Test dry run summary shows header."""
         from redgit.commands.propose import _show_dry_run_summary
@@ -849,7 +849,7 @@ class TestShowDryRunSummary:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("DRY RUN" in c for c in calls)
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_matched_group_details(self, mock_console):
         """Test shows details for matched groups."""
         from redgit.commands.propose import _show_dry_run_summary
@@ -871,7 +871,7 @@ class TestShowDryRunSummary:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("PROJ-123" in c for c in calls)
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_unmatched_group_details(self, mock_console):
         """Test shows details for unmatched groups."""
         from redgit.commands.propose import _show_dry_run_summary
@@ -889,7 +889,7 @@ class TestShowDryRunSummary:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("New" in c or "bug fix" in c for c in calls)
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_parent_task_for_subtasks(self, mock_console):
         """Test shows parent task info in subtasks mode."""
         from redgit.commands.propose import _show_dry_run_summary
@@ -908,7 +908,7 @@ class TestShowDryRunSummary:
         calls = [str(c) for c in mock_console.print.call_args_list]
         assert any("Parent Task" in c or "PROJ-100" in c for c in calls)
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_summary_stats(self, mock_console):
         """Test shows summary statistics."""
         from redgit.commands.propose import _show_dry_run_summary
@@ -1001,7 +1001,7 @@ class TestTransitionIssueInteractive:
     """Tests for _transition_issue_interactive function."""
 
     @patch('redgit.commands.propose.Prompt')
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_returns_false_when_no_transitions(self, mock_console, mock_prompt):
         """Test returns False when no transitions available."""
         from redgit.commands.propose import _transition_issue_interactive
@@ -1015,7 +1015,7 @@ class TestTransitionIssueInteractive:
         assert result is False
 
     @patch('redgit.commands.propose.Prompt')
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_returns_false_when_user_skips(self, mock_console, mock_prompt):
         """Test returns False when user chooses to skip."""
         from redgit.commands.propose import _transition_issue_interactive
@@ -1032,7 +1032,7 @@ class TestTransitionIssueInteractive:
         assert result is False
 
     @patch('redgit.commands.propose.Prompt')
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_returns_true_when_transition_succeeds(self, mock_console, mock_prompt):
         """Test returns True when transition succeeds."""
         from redgit.commands.propose import _transition_issue_interactive
@@ -1179,7 +1179,7 @@ class TestEnhanceGroupsWithDiffs:
 class TestShowTaskCommitDryRun:
     """Tests for _show_task_commit_dry_run function."""
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_task_info(self, mock_console):
         """Test shows task information in dry run."""
         from redgit.commands.propose import _show_task_commit_dry_run
@@ -1200,7 +1200,7 @@ class TestShowTaskCommitDryRun:
         assert any("PROJ-123" in c for c in calls)
         assert any("DRY RUN" in c for c in calls)
 
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_shows_error_when_task_not_found(self, mock_console):
         """Test shows error when task not found."""
         from redgit.commands.propose import _show_task_commit_dry_run
@@ -1377,7 +1377,7 @@ class TestProcessMatchedGroups:
     """Tests for _process_matched_groups function."""
 
     @patch('redgit.commands.propose._transition_issue_with_strategy')
-    @patch('redgit.commands.propose.console')
+    @patch('redgit.core.propose.display.console')
     def test_creates_branch_and_commits(self, mock_console, mock_transition):
         """Test creates branch and commits for matched groups."""
         from redgit.commands.propose import _process_matched_groups
