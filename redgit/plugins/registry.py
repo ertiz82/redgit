@@ -12,7 +12,7 @@ import importlib.util
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-from ..core.config import GLOBAL_PLUGINS_DIR
+from ..core.common.config import GLOBAL_PLUGINS_DIR
 
 # Builtin plugins directory (inside package)
 BUILTIN_PLUGINS_DIR = Path(__file__).parent

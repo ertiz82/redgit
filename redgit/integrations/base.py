@@ -41,6 +41,8 @@ class Issue:
     sprint: Optional[str] = None
     story_points: Optional[float] = None
     labels: Optional[List[str]] = None
+    parent_key: Optional[str] = None      # Parent issue/epic key
+    parent_summary: Optional[str] = None  # Parent issue/epic title
 
 
 @dataclass
@@ -180,7 +182,7 @@ class IntegrationBase(ABC):
             True if notification sent successfully
         """
         from .registry import get_notification
-        from ..core.config import ConfigManager
+        from ..core.common.config import ConfigManager
 
         # Skip if this is a notification integration
         if self.integration_type == IntegrationType.NOTIFICATION:
@@ -291,7 +293,7 @@ class IntegrationBase(ABC):
         Returns:
             Prompt content or None if not found
         """
-        from ..core.config import RETGIT_DIR
+        from ..core.common.config import RETGIT_DIR
 
         # Check for user-customized prompt first
         custom_path = RETGIT_DIR / "templates" / f"{cls.name}_{name}.md"
@@ -340,7 +342,7 @@ class TaskManagementBase(IntegrationBase):
             True if user has a custom prompt file
         """
         from pathlib import Path
-        from ..core.config import RETGIT_DIR
+        from ..core.common.config import RETGIT_DIR
 
         user_prompt_path = RETGIT_DIR / "prompts" / "integrations" / self.name / f"{prompt_name}.md"
         return user_prompt_path.exists()
@@ -356,7 +358,7 @@ class TaskManagementBase(IntegrationBase):
             User's custom prompt string or None if not exported
         """
         from pathlib import Path
-        from ..core.config import RETGIT_DIR
+        from ..core.common.config import RETGIT_DIR
 
         user_prompt_path = RETGIT_DIR / "prompts" / "integrations" / self.name / f"{prompt_name}.md"
         if user_prompt_path.exists():
@@ -532,7 +534,7 @@ Return ONLY the issue description text, nothing else.
             List of exported file paths
         """
         from pathlib import Path
-        from ..core.config import RETGIT_DIR
+        from ..core.common.config import RETGIT_DIR
 
         if target_dir:
             prompts_dir = Path(target_dir)
