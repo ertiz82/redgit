@@ -12,7 +12,7 @@ Features:
 
 from typing import List, Optional, Dict, Any, Callable
 from dataclasses import dataclass, field
-from ..core.config import ConfigManager
+from ..core.common.config import ConfigManager
 from ..integrations.registry import get_notification
 
 
