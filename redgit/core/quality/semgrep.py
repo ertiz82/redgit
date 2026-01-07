@@ -12,7 +12,7 @@ import subprocess
 import json
 from typing import List, Dict, Optional, Any
 
-from .config import ConfigManager
+from ..common.config import ConfigManager
 
 
 # Severity mapping from Semgrep to RedGit

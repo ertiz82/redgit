@@ -21,10 +21,10 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-from ..core.config import ConfigManager, RETGIT_DIR
-from ..core.gitops import GitOps
-from ..core.llm import LLMClient
-from ..core.semgrep import (
+from ..core.common.config import ConfigManager, RETGIT_DIR
+from ..core.common.gitops import GitOps
+from ..core.common.llm import LLMClient
+from ..core.quality.semgrep import (
     is_semgrep_installed,
     analyze_files as semgrep_analyze_files,
     convert_to_quality_issues,
@@ -728,7 +728,7 @@ def scan_cmd(
         rg quality scan -o report.json -f json  # Export as JSON
         rg quality scan --patterns         # Get design pattern suggestions
     """
-    from ..core.semgrep import (
+    from ..core.quality.semgrep import (
         is_semgrep_installed,
         run_semgrep,
         convert_to_quality_issues,
@@ -874,8 +874,8 @@ def scan_cmd(
 
 def _analyze_design_patterns(path: str, files: List[str], verbose: bool = False):
     """Analyze code structure and suggest design patterns using AI."""
-    from ..core.config import ConfigManager
-    from ..core.llm import LLMClient
+    from ..core.common.config import ConfigManager
+    from ..core.common.llm import LLMClient
 
     console.print("[bold cyan]Analyzing code structure for design patterns...[/bold cyan]")
 
