@@ -13,7 +13,7 @@ Usage:
 import typer
 from typing import Optional
 
-from ..core.config import ConfigManager
+from ..core.common.config import ConfigManager
 from ..integrations.registry import get_notification, get_integrations_by_type, IntegrationType
 
 
