@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ..core.constants import Styles, StatusIcons
+from ..core.common.constants import Styles, StatusIcons
 
 # Shared console instance
 console = Console()
