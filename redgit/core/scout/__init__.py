@@ -70,8 +70,8 @@ class Scout:
         - Tech stack
         - Suggested improvements
         """
-        from ..llm import LLMClient
-        from ..config import ConfigManager
+        from ..common.llm import LLMClient
+        from ..common.config import ConfigManager
 
         config = ConfigManager().load()
         llm = LLMClient(config.get("llm", {}))
@@ -115,8 +115,8 @@ class Scout:
         - dependencies: List of task IDs this depends on
         - phase: Development phase (1, 2, 3...)
         """
-        from ..llm import LLMClient
-        from ..config import ConfigManager
+        from ..common.llm import LLMClient
+        from ..common.config import ConfigManager
 
         if analysis is None:
             analysis = self.get_analysis()
@@ -158,7 +158,7 @@ class Scout:
         Returns dict of local_id -> issue_key mapping
         """
         from ...integrations.registry import get_task_management
-        from ..config import ConfigManager
+        from ..common.config import ConfigManager
 
         if tasks is None:
             tasks = self.get_plan()
@@ -606,8 +606,8 @@ Only output the YAML block, nothing else."""
 
         Returns tasks with suggested_assignee based on team skills.
         """
-        from ..llm import LLMClient
-        from ..config import ConfigManager
+        from ..common.llm import LLMClient
+        from ..common.config import ConfigManager
         from .team import TeamManager
 
         if analysis is None:
@@ -803,7 +803,7 @@ Only output the YAML block, nothing else."""
             Dict of local_id -> issue_key mapping
         """
         from ...integrations.registry import get_task_management
-        from ..config import ConfigManager
+        from ..common.config import ConfigManager
 
         if tasks is None:
             tasks = self.get_plan()
@@ -1030,6 +1030,286 @@ Only output the YAML block, nothing else."""
         return sprints
 
 
+    # ==================== Changes Analysis ====================
+
+    def analyze_changes(
+        self,
+        changes: List[Dict[str, Any]],
+        task_mgmt = None,
+        verbose: bool = False,
+        gitops = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze changed files and match them to existing tasks.
+
+        Uses propose-style LLM prompting to:
+        1. Get active issues from task management
+        2. Analyze files and match to existing issues
+        3. Group unmatched files and suggest epic titles/descriptions
+
+        Args:
+            changes: List of {"file": path, "status": "U"|"M"|"A"|"D"|"C"}
+            task_mgmt: Optional task management integration
+            verbose: Enable verbose output
+            gitops: Optional GitOps instance for project name detection
+
+        Returns:
+            Dict with:
+            - matched: List of groups with issue_key and _issue
+            - unmatched: List of groups with suggested issue_title/description
+        """
+        from ..common.llm import LLMClient
+        from ..common.config import ConfigManager
+
+        if not changes:
+            return {"matched": [], "unmatched": []}
+
+        config = ConfigManager().load()
+        llm = LLMClient(config.get("llm", {}))
+
+        # Get active issues if task management is available
+        active_issues = []
+        if task_mgmt and task_mgmt.enabled:
+            try:
+                active_issues = task_mgmt.get_my_active_issues()
+            except Exception:
+                pass
+
+        # Filter issues by project (epic name or labels should contain project name)
+        # Get project name from config first, fallback to git remote
+        import re
+        project_config = config.get("project", {})
+        project_name = project_config.get("name")
+        if not project_name and gitops and hasattr(gitops, 'get_project_name'):
+            project_name = gitops.get_project_name()
+
+        if active_issues and project_name:
+            def matches_project_name(text: str) -> bool:
+                """Check if text contains project name as whole word (case-insensitive)."""
+                if not text:
+                    return False
+                # Word boundary ile tam kelime eşleşmesi
+                pattern = re.compile(r'\b' + re.escape(project_name) + r'\b', re.IGNORECASE)
+                return bool(pattern.search(text))
+
+            def task_matches_project(issue) -> bool:
+                """Check if task matches project via epic summary OR labels."""
+                # 1. Epic/parent summary kontrolü
+                epic_summary = getattr(issue, 'parent_summary', None) or ""
+                if matches_project_name(epic_summary):
+                    return True
+
+                # 2. Labels kontrolü
+                labels = getattr(issue, 'labels', None) or []
+                for label in labels:
+                    if matches_project_name(label):
+                        return True
+
+                return False
+
+            filtered_issues = []
+            excluded_issues = []
+
+            for issue in active_issues:
+                if task_matches_project(issue):
+                    filtered_issues.append(issue)
+                else:
+                    excluded_issues.append(issue)
+
+            if verbose and excluded_issues:
+                print(f"[scout] Filtered out {len(excluded_issues)} issues from other projects (project: {project_name})")
+                for issue in excluded_issues[:5]:
+                    parent_info = getattr(issue, 'parent_summary', '')[:30] if hasattr(issue, 'parent_summary') else ''
+                    labels = getattr(issue, 'labels', []) or []
+                    labels_info = f", labels: {labels[:3]}" if labels else ""
+                    print(f"  - {issue.key}: epic='{parent_info}'{labels_info}")
+
+            active_issues = filtered_issues
+
+        # Get issue language if available
+        issue_language = None
+        if task_mgmt and hasattr(task_mgmt, 'issue_language'):
+            issue_language = task_mgmt.issue_language
+
+        # Build prompt using propose-style approach
+        prompt = self._build_changes_analysis_prompt(
+            changes=changes,
+            active_issues=active_issues,
+            issue_language=issue_language
+        )
+
+        # Generate groups with AI
+        try:
+            groups = llm.generate_groups(prompt)
+        except Exception as e:
+            if verbose:
+                print(f"LLM error: {e}")
+            return {"matched": [], "unmatched": []}
+
+        if not groups:
+            return {"matched": [], "unmatched": []}
+
+        # Categorize groups into matched and unmatched
+        matched_groups = []
+        unmatched_groups = []
+
+        for group in groups:
+            issue_key = group.get("issue_key")
+            if issue_key and task_mgmt:
+                # Verify issue exists
+                try:
+                    issue = task_mgmt.get_issue(issue_key)
+                    if issue:
+                        group["_issue"] = issue
+                        matched_groups.append(group)
+                    else:
+                        # Issue not found, treat as unmatched
+                        group["issue_key"] = None
+                        unmatched_groups.append(group)
+                except Exception:
+                    group["issue_key"] = None
+                    unmatched_groups.append(group)
+            else:
+                unmatched_groups.append(group)
+
+        return {
+            "matched": matched_groups,
+            "unmatched": unmatched_groups
+        }
+
+    def _build_changes_analysis_prompt(
+        self,
+        changes: List[Dict[str, Any]],
+        active_issues: List = None,
+        issue_language: Optional[str] = None
+    ) -> str:
+        """
+        Build prompt for changes analysis (propose-style).
+        """
+        # Format file list
+        files_section = self._format_changes_for_prompt(changes)
+
+        # Format active issues if available
+        issues_section = ""
+        if active_issues:
+            issues_section = self._format_issues_for_prompt(active_issues)
+
+        # Build the prompt
+        prompt = f"""Analyze these code changes and group them logically.
+
+## Changed Files
+{files_section}
+
+{issues_section}
+
+## Task
+Group the files by logical change/feature. For each group:
+1. If files relate to an existing issue from the Active Issues list, set issue_key
+2. If files don't match any issue, suggest a new epic with issue_title and issue_description
+
+"""
+
+        # Add response schema with language support
+        prompt += self._get_changes_response_schema(
+            has_issues=bool(active_issues),
+            issue_language=issue_language
+        )
+
+        return prompt
+
+    def _format_changes_for_prompt(self, changes: List[Dict[str, Any]]) -> str:
+        """Format changes list for prompt."""
+        lines = []
+        status_map = {
+            "M": "modified",
+            "U": "untracked",
+            "A": "added",
+            "D": "deleted",
+            "C": "conflict"
+        }
+
+        for i, change in enumerate(changes, 1):
+            file_path = change.get("file", "")
+            status = change.get("status", "M")
+            status_text = status_map.get(status, status)
+            lines.append(f"{i}. [{status_text}] {file_path}")
+
+        return "\n".join(lines)
+
+    def _format_issues_for_prompt(self, issues: List) -> str:
+        """Format active issues for prompt context."""
+        lines = [
+            "## Active Issues (match files to these when relevant)",
+            ""
+        ]
+
+        for issue in issues:
+            status = f"[{issue.status}]" if hasattr(issue, 'status') else ""
+            lines.append(f"- **{issue.key}** {status}: {issue.summary}")
+            if hasattr(issue, 'description') and issue.description:
+                desc = issue.description[:200]
+                if len(issue.description) > 200:
+                    desc += "..."
+                lines.append(f"  {desc}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _get_changes_response_schema(
+        self,
+        has_issues: bool = False,
+        issue_language: Optional[str] = None
+    ) -> str:
+        """Get response schema for changes analysis."""
+
+        lang_note = ""
+        if issue_language and issue_language != "en":
+            lang_names = {
+                "tr": "Turkish", "de": "German", "fr": "French",
+                "es": "Spanish", "pt": "Portuguese", "it": "Italian",
+                "ru": "Russian", "zh": "Chinese", "ja": "Japanese", "ko": "Korean"
+            }
+            lang_name = lang_names.get(issue_language, issue_language)
+            lang_note = f"\n**IMPORTANT:** Write issue_title and issue_description in {lang_name}."
+
+        return f"""## Response Format
+{lang_note}
+
+Respond with a YAML array. Each object represents a group of related files:
+
+```yaml
+- files:
+    - path/to/file1.py
+    - path/to/file2.py
+  commit_title: "feat: add user authentication"
+  commit_body: |
+    - Add login endpoint
+    - Add JWT validation
+  issue_key: PROJ-123
+  issue_title: null
+  issue_description: null
+
+- files:
+    - path/to/other.py
+  commit_title: "refactor: database migrations"
+  commit_body: "Add migration scripts"
+  issue_key: null
+  issue_title: "Database Migration Setup"
+  issue_description: "Add migration scripts for new schema changes and data transformations"
+```
+
+### Rules:
+- Group files by logical change/feature
+- If files match an Active Issue, set issue_key and leave issue_title/issue_description as null
+- If files don't match any issue, set issue_key to null and provide issue_title and issue_description
+- Every file must appear in exactly one group
+- issue_title should be a concise epic/task title (5-10 words)
+- issue_description should explain what needs to be done (1-3 sentences)
+
+Return ONLY the YAML array, no other text.
+"""
+
+
 def get_scout(config: dict = None) -> Scout:
     """
     Get configured Scout instance.
@@ -1040,7 +1320,7 @@ def get_scout(config: dict = None) -> Scout:
     Returns:
         Configured Scout instance
     """
-    from ..config import ConfigManager
+    from ..common.config import ConfigManager
 
     scout = Scout()
 

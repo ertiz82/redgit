@@ -2,18 +2,369 @@
 Push command - Push branches and complete issues.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 import typer
+import re
+import subprocess
 from rich.console import Console
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 
-from ..core.config import ConfigManager, StateManager
-from ..core.gitops import GitOps
+from ..core.common.config import ConfigManager, StateManager
+from ..core.common.gitops import GitOps
 from ..integrations.registry import get_task_management, get_code_hosting, get_cicd, get_notification, get_code_quality
 from ..utils.logging import get_logger
 from ..utils.notifications import NotificationService
 
 console = Console()
+
+
+# =============================================================================
+# MERGE REQUEST HELPER FUNCTIONS
+# =============================================================================
+
+def _detect_remote_type(gitops: GitOps) -> Tuple[str, str]:
+    """
+    Detect the remote hosting type (gitlab, github, bitbucket) from remote URL.
+
+    Returns:
+        Tuple of (remote_type, remote_url)
+        remote_type: 'gitlab', 'github', 'bitbucket', or 'unknown'
+    """
+    try:
+        remote_url = gitops.repo.git.remote("get-url", "origin")
+    except Exception:
+        return "unknown", ""
+
+    remote_url_lower = remote_url.lower()
+
+    if "gitlab" in remote_url_lower:
+        return "gitlab", remote_url
+    elif "github" in remote_url_lower:
+        return "github", remote_url
+    elif "bitbucket" in remote_url_lower:
+        return "bitbucket", remote_url
+    else:
+        # Try to detect from git config
+        try:
+            # Check if it's a self-hosted GitLab
+            result = subprocess.run(
+                ["git", "config", "--get", "remote.origin.url"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                url = result.stdout.strip()
+                # Most self-hosted are GitLab
+                if ".git" in url and "github" not in url.lower():
+                    return "gitlab", url
+        except Exception:
+            pass
+
+    return "unknown", remote_url
+
+
+def _get_git_users(gitops: GitOps) -> List[Dict[str, str]]:
+    """
+    Get list of users from git log (contributors).
+
+    Returns:
+        List of dicts with 'name' and 'email'
+    """
+    users = []
+    seen = set()
+
+    try:
+        # Get recent contributors from git log
+        log_output = gitops.repo.git.log(
+            "--format=%an|%ae",
+            "-100",  # Last 100 commits
+            "--all"
+        )
+
+        for line in log_output.split("\n"):
+            if "|" in line:
+                name, email = line.split("|", 1)
+                key = email.lower()
+                if key not in seen:
+                    seen.add(key)
+                    users.append({"name": name.strip(), "email": email.strip()})
+
+    except Exception:
+        pass
+
+    return users
+
+
+def _get_current_git_user(gitops: GitOps) -> Dict[str, str]:
+    """Get current git user from config."""
+    try:
+        name = gitops.repo.git.config("user.name")
+        email = gitops.repo.git.config("user.email")
+        return {"name": name.strip(), "email": email.strip()}
+    except Exception:
+        return {"name": "", "email": ""}
+
+
+def _match_user(query: str, users: List[Dict[str, str]]) -> Optional[Dict[str, str]]:
+    """
+    Fuzzy match a user query against list of users.
+
+    Args:
+        query: Name or email to search
+        users: List of user dicts
+
+    Returns:
+        Best matching user or None
+    """
+    query_lower = query.lower().strip()
+
+    if not query_lower:
+        return None
+
+    # Exact match first
+    for user in users:
+        if query_lower == user["name"].lower() or query_lower == user["email"].lower():
+            return user
+
+    # Partial match on name
+    for user in users:
+        if query_lower in user["name"].lower():
+            return user
+
+    # Partial match on email (before @)
+    for user in users:
+        email_name = user["email"].split("@")[0].lower()
+        if query_lower in email_name or email_name in query_lower:
+            return user
+
+    # Fuzzy match - any word matches
+    query_words = query_lower.split()
+    for user in users:
+        name_words = user["name"].lower().split()
+        for qw in query_words:
+            for nw in name_words:
+                if qw in nw or nw in qw:
+                    return user
+
+    return None
+
+
+def _get_available_branches(gitops: GitOps) -> List[str]:
+    """Get list of remote branches for target selection."""
+    branches = []
+
+    try:
+        # Get remote branches
+        remote_output = gitops.repo.git.branch("-r")
+        for line in remote_output.split("\n"):
+            branch = line.strip()
+            if branch and "->" not in branch:
+                # Remove 'origin/' prefix
+                if branch.startswith("origin/"):
+                    branch = branch[7:]
+                if branch not in branches:
+                    branches.append(branch)
+    except Exception:
+        pass
+
+    # Common default branches first
+    priority = ["main", "master", "develop", "dev"]
+    sorted_branches = []
+    for p in priority:
+        if p in branches:
+            sorted_branches.append(p)
+            branches.remove(p)
+    sorted_branches.extend(sorted(branches))
+
+    return sorted_branches
+
+
+def _prompt_mr_options(
+    gitops: GitOps,
+    current_branch: str,
+    base_branch: str = None
+) -> Dict:
+    """
+    Prompt user for MR creation options.
+
+    Returns:
+        Dict with 'target_branch', 'delete_source', 'assignee', 'assignee_email'
+    """
+    console.print("\n[bold cyan]🔀 Merge Request Ayarları[/bold cyan]\n")
+
+    # 1. Target branch
+    available_branches = _get_available_branches(gitops)
+    default_target = base_branch or (available_branches[0] if available_branches else "main")
+
+    console.print(f"[dim]Mevcut dallar: {', '.join(available_branches[:5])}{'...' if len(available_branches) > 5 else ''}[/dim]")
+    target_branch = Prompt.ask(
+        "Hedef dal (merge into)",
+        default=default_target
+    )
+
+    # 2. Delete source branch after merge?
+    delete_source = Confirm.ask(
+        f"Merge sonrası '{current_branch}' dalını sil?",
+        default=True
+    )
+
+    # 3. Assignee
+    users = _get_git_users(gitops)
+    current_user = _get_current_git_user(gitops)
+
+    if users:
+        console.print(f"\n[dim]Tanımlı kullanıcılar: {', '.join([u['name'] for u in users[:5]])}{'...' if len(users) > 5 else ''}[/dim]")
+
+    assignee_input = Prompt.ask(
+        "Atanacak kişi (isim veya email, boş bırakırsan kendin)",
+        default=""
+    )
+
+    assignee = None
+    assignee_email = None
+
+    if assignee_input:
+        matched = _match_user(assignee_input, users)
+        if matched:
+            assignee = matched["name"]
+            assignee_email = matched["email"]
+            console.print(f"[green]✓ Eşleşen kullanıcı: {assignee} <{assignee_email}>[/green]")
+        else:
+            console.print(f"[yellow]⚠️ '{assignee_input}' bulunamadı, sen atanacaksın[/yellow]")
+            assignee = current_user["name"]
+            assignee_email = current_user["email"]
+    else:
+        assignee = current_user["name"]
+        assignee_email = current_user["email"]
+
+    if assignee:
+        console.print(f"[dim]Atanan: {assignee}[/dim]")
+
+    return {
+        "target_branch": target_branch,
+        "delete_source": delete_source,
+        "assignee": assignee,
+        "assignee_email": assignee_email
+    }
+
+
+def _create_mr_with_push_options(
+    gitops: GitOps,
+    source_branch: str,
+    target_branch: str,
+    title: str,
+    description: str = "",
+    delete_source: bool = True,
+    assignee: str = None,
+    remote_type: str = "gitlab"
+) -> Tuple[bool, Optional[str]]:
+    """
+    Create MR using git push options (primarily for GitLab).
+
+    For GitHub, falls back to gh CLI if available.
+
+    Returns:
+        Tuple of (success, mr_url or None)
+    """
+    import os
+
+    if remote_type == "gitlab":
+        # GitLab push options
+        push_options = [
+            f"-o", "merge_request.create",
+            f"-o", f"merge_request.target={target_branch}",
+            f"-o", f"merge_request.title={title}",
+        ]
+
+        if description:
+            push_options.extend(["-o", f"merge_request.description={description}"])
+
+        if delete_source:
+            push_options.extend(["-o", "merge_request.remove_source_branch"])
+
+        if assignee:
+            # GitLab uses username, try to extract from email
+            username = assignee.split("@")[0] if "@" in assignee else assignee
+            push_options.extend(["-o", f"merge_request.assign={username}"])
+
+        # Build push command
+        cmd = ["git", "push", "-u", "origin", source_branch] + push_options
+
+        console.print(f"[dim]Running: git push -u origin {source_branch} -o merge_request.create ...[/dim]")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode == 0:
+                # Try to extract MR URL from output
+                mr_url = None
+                for line in (result.stdout + result.stderr).split("\n"):
+                    if "merge_request" in line.lower() and "http" in line.lower():
+                        # Extract URL
+                        match = re.search(r'https?://[^\s]+', line)
+                        if match:
+                            mr_url = match.group(0)
+                            break
+
+                return True, mr_url
+            else:
+                console.print(f"[red]Push failed: {result.stderr}[/red]")
+                return False, None
+
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+            return False, None
+
+    elif remote_type == "github":
+        # Try gh CLI for GitHub
+        try:
+            # First, regular push
+            exit_code = os.system(f"git push -u origin {source_branch}")
+            if exit_code != 0:
+                return False, None
+
+            # Then create PR with gh
+            cmd = [
+                "gh", "pr", "create",
+                "--title", title,
+                "--body", description or "",
+                "--base", target_branch,
+                "--head", source_branch
+            ]
+
+            if assignee:
+                cmd.extend(["--assignee", assignee])
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                # Extract PR URL from output
+                pr_url = result.stdout.strip()
+                if "http" in pr_url:
+                    return True, pr_url
+                return True, None
+            else:
+                console.print(f"[yellow]gh CLI failed: {result.stderr}[/yellow]")
+                console.print("[dim]GitHub PR oluşturmak için 'gh' CLI yükleyin veya GitHub integration ekleyin[/dim]")
+                return True, None  # Push succeeded, PR failed
+
+        except FileNotFoundError:
+            # gh CLI not installed
+            console.print("[yellow]⚠️ 'gh' CLI yüklü değil, PR manuel oluşturulmalı[/yellow]")
+            exit_code = os.system(f"git push -u origin {source_branch}")
+            return exit_code == 0, None
+
+    else:
+        # Unknown remote, just push
+        import os
+        exit_code = os.system(f"git push -u origin {source_branch}")
+        if exit_code == 0:
+            console.print("[yellow]⚠️ Remote türü tanınanamadı, MR manuel oluşturulmalı[/yellow]")
+            return True, None
+        return False, None
 
 
 # =============================================================================
@@ -158,6 +509,11 @@ def push_cmd(
     workflow = config.get("workflow", {})
     strategy = workflow.get("strategy", "local-merge")
 
+    # Auto-enable PR creation for merge-request strategy
+    if strategy == "merge-request" and not create_pr:
+        create_pr = True
+        console.print("[dim]Merge-request stratejisi: PR otomatik oluşturulacak[/dim]")
+
     # If no session, push current branch
     if not session or not session.get("branches"):
         _push_current_branch(gitops, config, complete, create_pr, issue, tags, trigger_ci, wait_ci, no_pull, force)
@@ -225,6 +581,20 @@ def _push_merge_request_strategy(
     pushed_branches = []
     skipped_branches = []
 
+    # Detect remote type and get MR options if creating PRs without code_hosting
+    remote_type = None
+    mr_options = None
+    use_push_options = create_pr and (not code_hosting or not code_hosting.enabled)
+
+    if use_push_options:
+        remote_type, _ = _detect_remote_type(gitops)
+        if remote_type != "unknown":
+            console.print(f"[dim]Detected remote: {remote_type}[/dim]")
+
+        # Ask MR options once for all branches
+        console.print(f"\n[bold cyan]🔀 Tüm dallar için Merge Request Ayarları[/bold cyan]")
+        mr_options = _prompt_mr_options(gitops, branches[0].get("branch", ""), base_branch)
+
     for b in branches:
         branch_name = b.get("branch", "")
         issue_key = b.get("issue_key")
@@ -251,27 +621,57 @@ def _push_merge_request_strategy(
                 continue
 
         try:
-            # Push to remote
-            gitops.repo.git.push("-u", "origin", branch_name)
-            console.print(f"[green]  ✓ Pushed to origin/{branch_name}[/green]")
-            pushed_branches.append(branch_name)
+            # Build MR title
+            mr_title = f"{issue_key}: " if issue_key else ""
+            mr_title += branch_name.split("/")[-1].replace("-", " ").title()
 
-            # Create PR if requested and code_hosting available
             if create_pr and code_hosting and code_hosting.enabled:
-                pr_title = f"{issue_key}: " if issue_key else ""
-                pr_title += branch_name.split("/")[-1].replace("-", " ").title()
+                # Use code_hosting integration
+                gitops.repo.git.push("-u", "origin", branch_name)
+                console.print(f"[green]  ✓ Pushed to origin/{branch_name}[/green]")
+                pushed_branches.append(branch_name)
 
                 pr_url = code_hosting.create_pull_request(
-                    title=pr_title,
+                    title=mr_title,
                     body=f"Refs: {issue_key}" if issue_key else "",
                     head_branch=branch_name,
                     base_branch=base_branch
                 )
                 if pr_url:
                     console.print(f"[green]  ✓ PR created: {pr_url}[/green]")
-                    # Send PR notification
                     if config:
                         _send_pr_notification(config, branch_name, pr_url, issue_key)
+
+            elif use_push_options and mr_options:
+                # Use push options for MR creation
+                success, mr_url = _create_mr_with_push_options(
+                    gitops=gitops,
+                    source_branch=branch_name,
+                    target_branch=mr_options["target_branch"],
+                    title=mr_title,
+                    description=f"Refs: {issue_key}" if issue_key else "",
+                    delete_source=mr_options["delete_source"],
+                    assignee=mr_options["assignee_email"],
+                    remote_type=remote_type
+                )
+
+                if success:
+                    pushed_branches.append(branch_name)
+                    if mr_url:
+                        console.print(f"[green]  ✓ MR created: {mr_url}[/green]")
+                        if config:
+                            _send_pr_notification(config, branch_name, mr_url, issue_key)
+                    else:
+                        console.print(f"[green]  ✓ Pushed to origin/{branch_name}[/green]")
+                else:
+                    console.print(f"[red]  ❌ Push failed[/red]")
+                    continue
+
+            else:
+                # Just push without PR
+                gitops.repo.git.push("-u", "origin", branch_name)
+                console.print(f"[green]  ✓ Pushed to origin/{branch_name}[/green]")
+                pushed_branches.append(branch_name)
 
             if issue_key:
                 pushed_issues.append(issue_key)
@@ -684,21 +1084,58 @@ def _push_current_branch(
     code_hosting = get_code_hosting(config)
 
     # Create PR if requested
-    if create_pr and code_hosting and code_hosting.enabled:
-        base_branch = code_hosting.get_default_branch()
-        pr_title = f"{issue_key}: " if issue_key else ""
-        pr_title += current_branch.split("/")[-1].replace("-", " ").title()
+    if create_pr:
+        if code_hosting and code_hosting.enabled:
+            # Use code_hosting integration
+            base_branch = code_hosting.get_default_branch()
+            pr_title = f"{issue_key}: " if issue_key else ""
+            pr_title += current_branch.split("/")[-1].replace("-", " ").title()
 
-        pr_url = code_hosting.create_pull_request(
-            title=pr_title,
-            body=f"Refs: {issue_key}" if issue_key else "",
-            head_branch=current_branch,
-            base_branch=base_branch
-        )
-        if pr_url:
-            console.print(f"[green]✓ PR created: {pr_url}[/green]")
-            # Send PR notification
-            _send_pr_notification(config, current_branch, pr_url, issue_key)
+            pr_url = code_hosting.create_pull_request(
+                title=pr_title,
+                body=f"Refs: {issue_key}" if issue_key else "",
+                head_branch=current_branch,
+                base_branch=base_branch
+            )
+            if pr_url:
+                console.print(f"[green]✓ PR created: {pr_url}[/green]")
+                _send_pr_notification(config, current_branch, pr_url, issue_key)
+        else:
+            # No code_hosting - use interactive MR creation with push options
+            remote_type, remote_url = _detect_remote_type(gitops)
+
+            if remote_type != "unknown":
+                console.print(f"[dim]Detected remote: {remote_type}[/dim]")
+
+            # Get MR options from user
+            mr_options = _prompt_mr_options(gitops, current_branch)
+
+            # Build MR title
+            mr_title = f"{issue_key}: " if issue_key else ""
+            mr_title += current_branch.split("/")[-1].replace("-", " ").title()
+
+            # Create MR with push options
+            console.print(f"\n[cyan]📤 Pushing and creating Merge Request...[/cyan]")
+            success, mr_url = _create_mr_with_push_options(
+                gitops=gitops,
+                source_branch=current_branch,
+                target_branch=mr_options["target_branch"],
+                title=mr_title,
+                description=f"Refs: {issue_key}" if issue_key else "",
+                delete_source=mr_options["delete_source"],
+                assignee=mr_options["assignee_email"],
+                remote_type=remote_type
+            )
+
+            if success:
+                if mr_url:
+                    console.print(f"[green]✓ MR created: {mr_url}[/green]")
+                    _send_pr_notification(config, current_branch, mr_url, issue_key)
+                else:
+                    console.print(f"[green]✓ Pushed to origin/{current_branch}[/green]")
+            else:
+                console.print(f"[red]❌ Push/MR creation failed[/red]")
+                return
 
     # Complete issue
     if complete and issue_key and task_mgmt and task_mgmt.enabled:
