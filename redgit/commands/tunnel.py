@@ -10,7 +10,7 @@ from typing import Optional
 from rich.console import Console
 from rich.table import Table
 
-from ..core.config import ConfigManager
+from ..core.common.config import ConfigManager
 
 console = Console()
 tunnel_app = typer.Typer(help="Manage tunnel connections")
