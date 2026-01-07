@@ -40,7 +40,7 @@ from urllib.error import HTTPError, URLError
 
 import typer
 
-from ..core.config import (
+from ..core.common.config import (
     ConfigManager,
     GLOBAL_INTEGRATIONS_DIR,
     GLOBAL_PLUGINS_DIR,
@@ -459,7 +459,7 @@ def install_from_tap(
     item_type, name, version = _parse_default_tap_spec(spec)
 
     # Search for item in configured taps
-    from ..core.tap import find_item_in_taps
+    from ..core.tap.manager import find_item_in_taps
 
     result = find_item_in_taps(name, item_type, tap_name)
 
@@ -1022,7 +1022,7 @@ def list_cmd(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed info")
 ):
     """List configured taps and tap-installed items."""
-    from ..core.tap import TapManager, OFFICIAL_TAP_NAME
+    from ..core.tap.manager import TapManager, OFFICIAL_TAP_NAME
 
     tap_mgr = TapManager()
 
@@ -1079,7 +1079,7 @@ def add_cmd(
     name: str = typer.Option(None, "--name", "-n", help="Custom name for the tap")
 ):
     """Add a tap repository to fetch plugins and integrations from."""
-    from ..core.tap import TapManager
+    from ..core.tap.manager import TapManager
 
     tap_mgr = TapManager()
 
@@ -1100,7 +1100,7 @@ def remove_cmd(
     name_or_url: str = typer.Argument(..., help="Tap name or URL to remove")
 ):
     """Remove a tap repository."""
-    from ..core.tap import TapManager
+    from ..core.tap.manager import TapManager
 
     tap_mgr = TapManager()
 
@@ -1115,7 +1115,7 @@ def remove_cmd(
 @tap_app.command("refresh")
 def refresh_cmd():
     """Refresh all tap caches."""
-    from ..core.tap import TapManager
+    from ..core.tap.manager import TapManager
 
     tap_mgr = TapManager()
 
@@ -1250,7 +1250,7 @@ def install_cmd(
         item_spec = tap_source
 
         # Auto-add the tap if not already added
-        from ..core.tap import TapManager
+        from ..core.tap.manager import TapManager
         tap_mgr = TapManager()
 
         # Check if tap already exists and get its name

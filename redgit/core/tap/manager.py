@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 import requests
 import yaml
 
-from .config import (
+from ..common.config import (
     GLOBAL_REDGIT_DIR,
     GLOBAL_TAPS_DIR,
     ensure_global_dirs
