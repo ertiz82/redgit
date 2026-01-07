@@ -10,6 +10,7 @@ Commands:
 - rg scout team-init     : Initialize team from task management
 - rg scout assign        : Auto-assign tasks to team
 - rg scout timeline      : Show project timeline
+- rg scout changes       : Analyze changed files and match to tasks
 """
 
 import typer
@@ -21,7 +22,7 @@ from rich.tree import Tree
 from rich.prompt import Prompt
 from typing import Optional
 
-from ..core.config import ConfigManager
+from ..core.common.config import ConfigManager
 from ..core.scout import Scout, SyncStrategy, get_scout
 
 console = Console()
@@ -690,3 +691,385 @@ def sprints_cmd(
 
     console.print(f"[dim]Total: {len(sprints)} sprints[/dim]")
     console.print("[dim]Sprint assignments saved to plan[/dim]")
+
+
+# ==================== Changes Analysis Command ====================
+
+@scout_app.command("changes")
+def changes_cmd(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed analysis"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output mode: terminal, file, notify"),
+    channel: Optional[str] = typer.Option(None, "--channel", "-c", help="Notification channel/user (@user or #channel)")
+):
+    """Analyze changed files and match them to existing tasks."""
+    from ..core.common.gitops import GitOps, NotAGitRepoError
+    from ..integrations.registry import get_task_management, get_notification
+
+    config = ConfigManager().load()
+    scout = _get_scout()
+
+    # Initialize GitOps
+    try:
+        gitops = GitOps()
+        repo_name = gitops.get_repo_name() if hasattr(gitops, 'get_repo_name') else ""
+    except NotAGitRepoError:
+        console.print("[red]Not a git repository.[/red]")
+        raise typer.Exit(1)
+
+    # Get task management
+    task_mgmt = get_task_management(config)
+
+    # Get notification integration
+    notification = get_notification(config)
+    has_notification = notification is not None and notification.enabled if notification else False
+    notification_name = notification.name if has_notification else ""
+
+    # Get changes
+    changes = gitops.get_changes()
+    if not changes:
+        console.print("[yellow]No changes found.[/yellow]")
+        console.print("[dim]Stage or modify some files first.[/dim]")
+        return
+
+    console.print(f"\n[bold cyan]🔍 Analyzing {len(changes)} changed files...[/bold cyan]\n")
+
+    # Show task management status
+    if task_mgmt and task_mgmt.enabled:
+        console.print(f"[dim]Task management: {task_mgmt.name}[/dim]")
+    else:
+        console.print("[dim]No task management configured - showing suggested epics only[/dim]")
+
+    # Analyze changes
+    try:
+        with console.status("[bold green]AI analyzing changes..."):
+            result = scout.analyze_changes(
+                changes=changes,
+                task_mgmt=task_mgmt,
+                verbose=verbose,
+                gitops=gitops
+            )
+    except Exception as e:
+        console.print(f"[red]Analysis failed: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not result or (not result.get("matched") and not result.get("unmatched")):
+        console.print("[yellow]No analysis results.[/yellow]")
+        return
+
+    # Determine output mode
+    if output:
+        # Direct output mode from CLI
+        output_choice = output.lower()
+        if output_choice not in ["terminal", "file", "notify", "notification"]:
+            console.print(f"[red]Invalid output mode: {output}[/red]")
+            console.print("[dim]Valid options: terminal, file, notify[/dim]")
+            raise typer.Exit(1)
+        if output_choice in ["notify", "notification"]:
+            output_choice = "notification"
+    else:
+        # Interactive output choice
+        output_choice = _prompt_output_choice(has_notification, notification_name)
+
+    # Handle output based on choice
+    if output_choice == "terminal":
+        _display_changes_analysis(result, task_mgmt)
+
+    elif output_choice == "file":
+        filepath = _export_to_file(result, task_mgmt, repo_name)
+        console.print(f"\n[green]✓ Exported to:[/green] {filepath}")
+        console.print("[dim]You can copy this file content to share in chat apps.[/dim]")
+
+    elif output_choice == "notification":
+        if not has_notification:
+            console.print("[red]No notification integration configured.[/red]")
+            console.print("[dim]Configure a notification integration in .redgit/config.yaml[/dim]")
+            raise typer.Exit(1)
+
+        # Get target channel if not provided
+        target_channel = channel
+        if not target_channel:
+            target_channel = _prompt_notification_target(notification)
+
+        _send_via_notification(result, task_mgmt, notification, target_channel or None)
+
+
+def _display_changes_analysis(result: dict, task_mgmt):
+    """Display the changes analysis results in rich tables."""
+    matched = result.get("matched", [])
+    unmatched = result.get("unmatched", [])
+
+    total_matched_files = sum(len(g.get("files", [])) for g in matched)
+    total_unmatched_files = sum(len(g.get("files", [])) for g in unmatched)
+
+    # Display matched changes table
+    if matched:
+        console.print(f"\n[bold green]📋 MATCHED CHANGES ({total_matched_files} files → {len(matched)} tasks)[/bold green]")
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Task", style="cyan", width=12)
+        table.add_column("Summary", width=35)
+        table.add_column("Files", width=40)
+
+        for group in matched:
+            issue_key = group.get("issue_key", "")
+            issue = group.get("_issue")
+            summary = issue.summary if issue else group.get("commit_title", "")[:35]
+
+            files = group.get("files", [])
+            files_display = _format_files_compact(files)
+
+            table.add_row(issue_key, summary[:35], files_display)
+
+        console.print(table)
+    else:
+        console.print("\n[dim]No changes matched to existing tasks.[/dim]")
+
+    # Display unmatched changes (suggested epics) table
+    if unmatched:
+        console.print(f"\n[bold yellow]📦 SUGGESTED EPICS FOR UNMATCHED CHANGES ({total_unmatched_files} files → {len(unmatched)} epics)[/bold yellow]")
+
+        table = Table(show_header=True, header_style="bold yellow")
+        table.add_column("#", width=3)
+        table.add_column("Suggested Title", width=30)
+        table.add_column("Description", width=35)
+        table.add_column("Files", width=28)
+
+        for i, group in enumerate(unmatched, 1):
+            title = group.get("issue_title") or group.get("commit_title", "Untitled")
+            desc = group.get("issue_description") or group.get("commit_body", "")
+            desc_preview = desc[:35].replace('\n', ' ') + "..." if len(desc) > 35 else desc.replace('\n', ' ')
+
+            files = group.get("files", [])
+            files_display = _format_files_compact(files)
+
+            table.add_row(str(i), title[:30], desc_preview, files_display)
+
+        console.print(table)
+
+        # Show helpful next steps
+        if task_mgmt and task_mgmt.enabled:
+            console.print("\n[dim]💡 Create these tasks in your task management, then run:[/dim]")
+            console.print("[dim]   rg propose -t TASK-KEY[/dim]")
+    else:
+        if matched:
+            console.print("\n[green]✓ All changes matched to existing tasks![/green]")
+            console.print("[dim]Run 'rg propose' to commit these changes.[/dim]")
+
+    # Summary
+    total_files = total_matched_files + total_unmatched_files
+    console.print(f"\n[dim]Total: {total_files} files analyzed[/dim]")
+
+
+def _format_files_compact(files: list, max_display: int = 3, full_path: bool = True) -> str:
+    """Format file list for compact table display.
+
+    Args:
+        files: List of file paths
+        max_display: Maximum number of files to show
+        full_path: If True, show full path; if False, show only filename
+    """
+    if not files:
+        return "-"
+
+    display_files = []
+    for f in files[:max_display]:
+        if full_path:
+            display_files.append(f)
+        else:
+            display_files.append(f.split("/")[-1])
+
+    result = ", ".join(display_files)
+    if len(files) > max_display:
+        result += f" (+{len(files) - max_display})"
+
+    return result
+
+
+# ==================== Output Options ====================
+
+def _format_as_markdown(result: dict, task_mgmt, repo_name: str = "") -> str:
+    """Format analysis result as markdown for sharing."""
+    from datetime import datetime
+
+    matched = result.get("matched", [])
+    unmatched = result.get("unmatched", [])
+
+    total_matched_files = sum(len(g.get("files", [])) for g in matched)
+    total_unmatched_files = sum(len(g.get("files", [])) for g in unmatched)
+    total_files = total_matched_files + total_unmatched_files
+
+    lines = [
+        "# 🔍 Scout Changes Analysis",
+        "",
+        f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+    ]
+
+    if repo_name:
+        lines.append(f"**Repository:** {repo_name}")
+
+    lines.extend([
+        f"**Files Analyzed:** {total_files}",
+        "",
+        "---",
+        "",
+    ])
+
+    # Matched changes section
+    if matched:
+        lines.extend([
+            f"## 📋 Matched Changes ({total_matched_files} files → {len(matched)} tasks)",
+            "",
+            "| Task | Summary | Files |",
+            "|------|---------|-------|",
+        ])
+
+        for group in matched:
+            issue_key = group.get("issue_key", "")
+            issue = group.get("_issue")
+            summary = issue.summary if issue else group.get("commit_title", "")
+            files = group.get("files", [])
+            files_str = ", ".join(files)
+
+            lines.append(f"| {issue_key} | {summary} | {files_str} |")
+
+        lines.extend(["", "---", ""])
+
+    # Unmatched changes section
+    if unmatched:
+        lines.extend([
+            f"## 📦 Suggested Epics ({total_unmatched_files} files → {len(unmatched)} epics)",
+            "",
+        ])
+
+        for i, group in enumerate(unmatched, 1):
+            title = group.get("issue_title") or group.get("commit_title", "Untitled")
+            desc = group.get("issue_description") or group.get("commit_body", "")
+            files = group.get("files", [])
+
+            lines.extend([
+                f"### {i}. {title}",
+                desc,
+                "",
+                f"**Files:** {', '.join(files)}",
+                "",
+            ])
+
+        lines.extend(["---", ""])
+
+    # Footer
+    lines.append("💡 Create these tasks in your task management, then run: `rg propose -t TASK-KEY`")
+
+    return "\n".join(lines)
+
+
+def _export_to_file(result: dict, task_mgmt, repo_name: str = "") -> str:
+    """Export analysis result to a markdown file."""
+    import tempfile
+    from datetime import datetime
+
+    content = _format_as_markdown(result, task_mgmt, repo_name)
+
+    # Create temp file with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"scout-changes-{timestamp}.md"
+    filepath = f"/tmp/{filename}"
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return filepath
+
+
+def _format_as_notification(result: dict, task_mgmt) -> str:
+    """Format analysis result for notification message."""
+    matched = result.get("matched", [])
+    unmatched = result.get("unmatched", [])
+
+    total_matched_files = sum(len(g.get("files", [])) for g in matched)
+    total_unmatched_files = sum(len(g.get("files", [])) for g in unmatched)
+
+    lines = ["🔍 Scout Changes Analysis", ""]
+
+    if matched:
+        lines.append(f"📋 Matched: {total_matched_files} files → {len(matched)} tasks")
+        for group in matched:
+            issue_key = group.get("issue_key", "")
+            issue = group.get("_issue")
+            summary = issue.summary[:30] if issue else group.get("commit_title", "")[:30]
+            file_count = len(group.get("files", []))
+            lines.append(f"• {issue_key}: {summary} ({file_count} files)")
+        lines.append("")
+
+    if unmatched:
+        lines.append(f"📦 Suggested Epics: {total_unmatched_files} files → {len(unmatched)} epics")
+        for group in unmatched:
+            title = group.get("issue_title") or group.get("commit_title", "Untitled")
+            file_count = len(group.get("files", []))
+            lines.append(f"• {title[:35]} ({file_count} files)")
+        lines.append("")
+
+    lines.append("💡 Create tasks and run: rg propose -t TASK-KEY")
+
+    return "\n".join(lines)
+
+
+def _prompt_output_choice(has_notification: bool, notification_name: str = "") -> str:
+    """Prompt user to choose output method."""
+    console.print("\n[bold]📤 How would you like to receive the analysis?[/bold]\n")
+
+    console.print("  [cyan][1][/cyan] Terminal - Show here")
+    console.print("  [cyan][2][/cyan] File - Export to markdown file")
+
+    if has_notification:
+        console.print(f"  [cyan][3][/cyan] Notification - Send via {notification_name}")
+
+    console.print("")
+
+    valid_choices = ["1", "2", "terminal", "file"]
+    if has_notification:
+        valid_choices.extend(["3", "notify", "notification"])
+
+    while True:
+        choice = Prompt.ask("Choice", default="1")
+
+        if choice in ["1", "terminal"]:
+            return "terminal"
+        elif choice in ["2", "file"]:
+            return "file"
+        elif has_notification and choice in ["3", "notify", "notification"]:
+            return "notification"
+        else:
+            console.print(f"[red]Invalid choice. Please enter 1, 2{', or 3' if has_notification else ''}.[/red]")
+
+
+def _prompt_notification_target(notification, default_channel: str = "") -> str:
+    """Prompt user for notification target (channel/user)."""
+    console.print("\n[bold]📬 Send notification to:[/bold]")
+    console.print("[dim]Enter channel (#channel) or user (@user)[/dim]")
+
+    target = Prompt.ask("Channel/User", default=default_channel or "")
+    return target
+
+
+def _send_via_notification(result: dict, task_mgmt, notification, channel: str = None):
+    """Send analysis result via notification integration."""
+    # Format message
+    message = _format_as_notification(result, task_mgmt)
+
+    # Send notification
+    try:
+        success = notification.notify(
+            event_type="scout",
+            title="Scout Changes Analysis",
+            message=message,
+            level="info",
+            channel=channel
+        )
+
+        if success:
+            target_info = f" to {channel}" if channel else ""
+            console.print(f"[green]✓ Notification sent{target_info}![/green]")
+        else:
+            console.print("[red]Failed to send notification.[/red]")
+    except Exception as e:
+        console.print(f"[red]Notification error: {e}[/red]")
