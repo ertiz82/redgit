@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt, IntPrompt, Confirm
 from rich.table import Table
 
-from ..core.config import ConfigManager
+from ..core.common.config import ConfigManager
 from ..utils.dependency import ensure_websockets, show_websockets_install_help
 from ..integrations.registry import get_task_management, get_tunnel_integration
 
