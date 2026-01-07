@@ -18,7 +18,7 @@ from rich.tree import Tree
 import yaml
 import os
 
-from ..core.config import ConfigManager, CONFIG_PATH, DEFAULT_NOTIFICATIONS, DEFAULT_QUALITY
+from ..core.common.config import ConfigManager, CONFIG_PATH, DEFAULT_NOTIFICATIONS, DEFAULT_QUALITY
 
 console = Console()
 config_app = typer.Typer(help="View and modify configuration")
@@ -300,7 +300,7 @@ def reset_cmd(
         console.print(f"[green]Reset '{section}' to defaults[/green]")
 
     elif section == "workflow":
-        from ..core.config import DEFAULT_WORKFLOW
+        from ..core.common.config import DEFAULT_WORKFLOW
         if not force and not Confirm.ask(f"Reset '{section}' to defaults?", default=True):
             return
 
@@ -580,8 +580,8 @@ def export_prompt_cmd(
         rg config export-prompt quality              # Export quality analysis prompt
     """
     from pathlib import Path
-    from ..core.prompt import BUILTIN_PROMPTS_DIR
-    from ..core.config import RETGIT_DIR
+    from ..core.common.prompt import BUILTIN_PROMPTS_DIR
+    from ..core.common.config import RETGIT_DIR
     from ..plugins.registry import get_plugin_by_name, get_builtin_plugins
     from ..integrations.registry import get_all_integrations
 
@@ -750,8 +750,8 @@ def export_prompt_cmd(
 def list_prompts_cmd():
     """List available prompt templates."""
     from pathlib import Path
-    from ..core.prompt import BUILTIN_PROMPTS_DIR
-    from ..core.config import RETGIT_DIR
+    from ..core.common.prompt import BUILTIN_PROMPTS_DIR
+    from ..core.common.config import RETGIT_DIR
     from ..plugins.registry import get_builtin_plugins
     from ..integrations.registry import get_all_integrations
 

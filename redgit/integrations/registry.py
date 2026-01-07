@@ -31,7 +31,7 @@ from .base import (
     TunnelBase
 )
 
-from ..core.config import GLOBAL_INTEGRATIONS_DIR
+from ..core.common.config import GLOBAL_INTEGRATIONS_DIR
 
 # Builtin integrations directory (inside package)
 BUILTIN_INTEGRATIONS_DIR = Path(__file__).parent
@@ -623,7 +623,7 @@ def send_notification(
             fields={"Branch": "main"}
         )
     """
-    from ..core.config import ConfigManager
+    from ..core.common.config import ConfigManager
 
     try:
         config = ConfigManager().load()

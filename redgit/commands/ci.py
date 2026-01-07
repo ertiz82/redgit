@@ -15,8 +15,8 @@ from typing import Optional, List
 from rich.console import Console
 from rich.table import Table
 
-from ..core.config import ConfigManager
-from ..core.gitops import GitOps
+from ..core.common.config import ConfigManager
+from ..core.common.gitops import GitOps
 from ..integrations.registry import get_cicd, get_integrations_by_type, IntegrationType
 
 console = Console()

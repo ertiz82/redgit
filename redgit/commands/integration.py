@@ -2,7 +2,7 @@ import json
 import typer
 from pathlib import Path
 
-from ..core.config import ConfigManager
+from ..core.common.config import ConfigManager
 from ..integrations.registry import (
     get_builtin_integrations,
     get_all_integrations,
@@ -46,7 +46,7 @@ def _get_installed_integrations() -> set:
     - Global directory: ~/.redgit/integrations/
     - Project directory: .redgit/integrations/
     """
-    from ..core.config import GLOBAL_INTEGRATIONS_DIR
+    from ..core.common.config import GLOBAL_INTEGRATIONS_DIR
 
     installed = set()
 
@@ -139,7 +139,7 @@ def list_cmd(
 
     # Show available from taps
     if all_integrations:
-        from ..core.tap import TapManager
+        from ..core.tap.manager import TapManager
 
         tap_mgr = TapManager()
         tap_integrations = tap_mgr.get_all_integrations(include_installed=True)
@@ -466,7 +466,7 @@ def update_cmd(
     force: bool = typer.Option(False, "--force", "-f", help="Force reinstall even if up to date")
 ):
     """Update installed integrations from taps"""
-    from ..core.tap import TapManager, find_item_in_taps
+    from ..core.tap.manager import TapManager, find_item_in_taps
     from .tap import install_from_tap
 
     tap_mgr = TapManager()
