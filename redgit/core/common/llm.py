@@ -223,6 +223,117 @@ class LLMClient:
             return result, raw_output
         return result
 
+    def generate_multi_task_groups(self, prompt: str, return_raw: bool = False) -> dict:
+        """
+        Generate file-to-task assignments for multiple parent tasks.
+
+        Sends prompt to LLM and parses response to assign files to
+        different parent tasks, creating subtask groups under each.
+
+        Args:
+            prompt: The multi-task prompt
+            return_raw: If True, return tuple of (result, raw_response)
+
+        Returns:
+            Dict with keys: task_assignments, unmatched_files
+        """
+        # Get raw response from LLM
+        raw_output = self.chat(prompt)
+
+        # Parse the response
+        result = self._parse_multi_task_response(raw_output)
+
+        if return_raw:
+            return result, raw_output
+        return result
+
+    def _parse_multi_task_response(self, output: str) -> dict:
+        """
+        Parse JSON response for multi-task mode.
+
+        Expected format:
+        {
+            "task_assignments": [
+                {
+                    "task_key": "SCRUM-123",
+                    "subtask_groups": [
+                        {
+                            "files": [...],
+                            "commit_title": "...",
+                            "commit_body": "...",
+                            "issue_title": "...",
+                            "issue_description": "..."
+                        }
+                    ]
+                }
+            ],
+            "unmatched_files": [...]
+        }
+        """
+        default = {
+            "task_assignments": [],
+            "unmatched_files": []
+        }
+
+        # Extract JSON from output
+        json_text = self._extract_json(output)
+        if not json_text:
+            return default
+
+        try:
+            data = json.loads(json_text)
+
+            # Validate and return with defaults for missing keys
+            return {
+                "task_assignments": data.get("task_assignments", []),
+                "unmatched_files": data.get("unmatched_files", [])
+            }
+        except json.JSONDecodeError:
+            # Try YAML as fallback
+            try:
+                data = yaml.safe_load(json_text)
+                if isinstance(data, dict):
+                    return {
+                        "task_assignments": data.get("task_assignments", []),
+                        "unmatched_files": data.get("unmatched_files", [])
+                    }
+            except Exception:
+                pass
+
+            return default
+
+    def _extract_json(self, output: str) -> str:
+        """
+        Extract JSON from LLM output.
+
+        Handles:
+        - JSON in code blocks (```json ... ```)
+        - Raw JSON objects
+        - Raw JSON arrays
+        """
+        # First, try to find a JSON code block
+        for marker in ["```json", "```"]:
+            start = output.find(marker)
+            if start != -1:
+                marker_len = len(marker)
+                end = output.find("```", start + marker_len)
+                if end != -1:
+                    return output[start + marker_len:end].strip()
+
+        # If no code block, try to find raw JSON object
+        start = output.find("{")
+        end = output.rfind("}") + 1
+        if start >= 0 and end > start:
+            return output[start:end]
+
+        # Try to find JSON array
+        start = output.find("[")
+        end = output.rfind("]") + 1
+        if start >= 0 and end > start:
+            return output[start:end]
+
+        return ""
+
     def _parse_task_filtered_response(self, output: str) -> dict:
         """
         Parse JSON response for task-filtered mode.
@@ -325,7 +436,7 @@ class LLMClient:
         response = client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3
+            temperature=0.1  # Low temperature for consistent results
         )
         return response.choices[0].message.content
 
@@ -336,7 +447,8 @@ class LLMClient:
         response = client.messages.create(
             model=self.model,
             max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1  # Low temperature for consistent results
         )
         return response.content[0].text
 
@@ -346,7 +458,12 @@ class LLMClient:
         base_url = self.provider_config.get("base_url", "http://localhost:11434")
         response = requests.post(
             f"{base_url}/api/generate",
-            json={"model": self.model, "prompt": prompt, "stream": False}
+            json={
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.1}  # Low temperature for consistent results
+            }
         )
         return response.json().get("response", "")
 
@@ -357,7 +474,11 @@ class LLMClient:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"model": self.model, "messages": [{"role": "user", "content": prompt}]}
+            json={
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1  # Low temperature for consistent results
+            }
         )
         return response.json()["choices"][0]["message"]["content"]
 
