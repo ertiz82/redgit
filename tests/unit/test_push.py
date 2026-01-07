@@ -29,7 +29,7 @@ class TestGetUnpushedTags:
         import os
         os.chdir(temp_git_repo)
 
-        from redgit.core.gitops import GitOps
+        from redgit.core.common.gitops import GitOps
         gitops = GitOps()
 
         result = _get_unpushed_tags(gitops)
@@ -40,7 +40,7 @@ class TestGetUnpushedTags:
         import os
         os.chdir(temp_git_repo)
 
-        from redgit.core.gitops import GitOps
+        from redgit.core.common.gitops import GitOps
         gitops = GitOps()
 
         # Create a local tag
@@ -54,7 +54,7 @@ class TestGetUnpushedTags:
         import os
         os.chdir(temp_git_repo)
 
-        from redgit.core.gitops import GitOps
+        from redgit.core.common.gitops import GitOps
         gitops = GitOps()
 
         result = _get_unpushed_tags(gitops)
@@ -130,7 +130,7 @@ class TestIsNotificationEnabled:
 
     def test_returns_boolean(self):
         """Test returns a boolean value."""
-        with patch('redgit.core.config.ConfigManager') as mock_cm:
+        with patch('redgit.core.common.config.ConfigManager') as mock_cm:
             mock_instance = MagicMock()
             mock_instance.is_notification_enabled.return_value = True
             mock_cm.return_value = mock_instance
@@ -140,7 +140,7 @@ class TestIsNotificationEnabled:
 
     def test_returns_true_when_enabled(self):
         """Test returns True when notification is enabled."""
-        with patch('redgit.core.config.ConfigManager') as mock_cm:
+        with patch('redgit.core.common.config.ConfigManager') as mock_cm:
             mock_instance = MagicMock()
             mock_instance.is_notification_enabled.return_value = True
             mock_cm.return_value = mock_instance

@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from dataclasses import dataclass
 
-from redgit.core.prompt import (
+from redgit.core.common.prompt import (
     get_prompt_path,
     get_user_prompt_path,
     PromptManager,
@@ -361,7 +361,7 @@ class TestPromptManagerLoadByName:
         prompt_file = prompt_dir / "custom.md"
         prompt_file.write_text("Custom prompt content")
 
-        with patch('redgit.core.prompt.RETGIT_DIR', tmp_path / ".redgit"):
+        with patch('redgit.core.common.prompt.RETGIT_DIR', tmp_path / ".redgit"):
             result = pm._load_by_name("custom", "commit")
             assert result == "Custom prompt content"
 
@@ -369,8 +369,8 @@ class TestPromptManagerLoadByName:
         """Test FileNotFoundError for missing prompt."""
         pm = PromptManager({})
 
-        with patch('redgit.core.prompt.RETGIT_DIR', Path("/nonexistent")):
-            with patch('redgit.core.prompt.PROMPT_CATEGORIES', {}):
+        with patch('redgit.core.common.prompt.RETGIT_DIR', Path("/nonexistent")):
+            with patch('redgit.core.common.prompt.PROMPT_CATEGORIES', {}):
                 with pytest.raises(FileNotFoundError, match="Prompt not found"):
                     pm._load_by_name("nonexistent", "commit")
 
@@ -386,7 +386,7 @@ class TestPromptManagerFetchUrl:
         mock_response.text = "Prompt from URL"
         mock_response.raise_for_status = MagicMock()
 
-        with patch('redgit.core.prompt.requests.get', return_value=mock_response) as mock_get:
+        with patch('redgit.core.common.prompt.requests.get', return_value=mock_response) as mock_get:
             result = pm._fetch_url("https://example.com/prompt.md")
             mock_get.assert_called_once_with("https://example.com/prompt.md", timeout=10)
             assert result == "Prompt from URL"
@@ -395,7 +395,7 @@ class TestPromptManagerFetchUrl:
         """Test URL fetch error handling."""
         pm = PromptManager({})
 
-        with patch('redgit.core.prompt.requests.get', side_effect=Exception("Network error")):
+        with patch('redgit.core.common.prompt.requests.get', side_effect=Exception("Network error")):
             with pytest.raises(RuntimeError, match="Failed to fetch prompt"):
                 pm._fetch_url("https://example.com/prompt.md")
 
@@ -452,7 +452,7 @@ class TestPromptManagerLoadTemplate:
         pm = PromptManager({})
 
         with patch.object(pm, '_load_by_name', return_value="Named prompt") as mock_load:
-            with patch('redgit.core.prompt.get_builtin_plugins', return_value=[]):
+            with patch('redgit.core.common.prompt.get_builtin_plugins', return_value=[]):
                 result = pm._load_template("custom", None)
                 mock_load.assert_called_with("custom")
                 assert result == "Named prompt"
@@ -487,8 +487,8 @@ class TestPromptManagerLoadTemplate:
         mock_plugin = MagicMock()
         mock_plugin.get_prompt.return_value = "Laravel prompt"
 
-        with patch('redgit.core.prompt.get_builtin_plugins', return_value=["laravel"]):
-            with patch('redgit.core.prompt.get_plugin_by_name', return_value=mock_plugin):
+        with patch('redgit.core.common.prompt.get_builtin_plugins', return_value=["laravel"]):
+            with patch('redgit.core.common.prompt.get_plugin_by_name', return_value=mock_plugin):
                 result = pm._load_template("laravel", None)
                 assert result == "Laravel prompt"
 
@@ -504,7 +504,7 @@ class TestPromptManagerStaticMethods:
         user_file = user_dir / "default.md"
         user_file.write_text("User override content")
 
-        with patch('redgit.core.prompt.get_user_prompt_path', return_value=user_file):
+        with patch('redgit.core.common.prompt.get_user_prompt_path', return_value=user_file):
             result = PromptManager.load_prompt("commit", "default")
             assert result == "User override content"
 
@@ -513,22 +513,22 @@ class TestPromptManagerStaticMethods:
         builtin_file = tmp_path / "default.md"
         builtin_file.write_text("Builtin content")
 
-        with patch('redgit.core.prompt.get_user_prompt_path', return_value=tmp_path / "nonexistent.md"):
-            with patch('redgit.core.prompt.get_prompt_path', return_value=builtin_file):
+        with patch('redgit.core.common.prompt.get_user_prompt_path', return_value=tmp_path / "nonexistent.md"):
+            with patch('redgit.core.common.prompt.get_prompt_path', return_value=builtin_file):
                 result = PromptManager.load_prompt("commit", "default")
                 assert result == "Builtin content"
 
     def test_load_prompt_not_found(self, tmp_path):
         """Test load_prompt raises when not found."""
-        with patch('redgit.core.prompt.get_user_prompt_path', return_value=tmp_path / "nonexistent.md"):
-            with patch('redgit.core.prompt.get_prompt_path', return_value=tmp_path / "also_nonexistent.md"):
+        with patch('redgit.core.common.prompt.get_user_prompt_path', return_value=tmp_path / "nonexistent.md"):
+            with patch('redgit.core.common.prompt.get_prompt_path', return_value=tmp_path / "also_nonexistent.md"):
                 with pytest.raises(FileNotFoundError):
                     PromptManager.load_prompt("commit", "nonexistent")
 
     def test_export_prompt(self, tmp_path):
         """Test export_prompt creates file."""
         with patch.object(PromptManager, 'load_prompt', return_value="Content to export"):
-            with patch('redgit.core.prompt.RETGIT_DIR', tmp_path / ".redgit"):
+            with patch('redgit.core.common.prompt.RETGIT_DIR', tmp_path / ".redgit"):
                 result = PromptManager.export_prompt("commit", "default")
 
                 assert result.exists()
@@ -536,9 +536,9 @@ class TestPromptManagerStaticMethods:
 
     def test_get_available_prompts(self, tmp_path):
         """Test get_available_prompts returns list."""
-        with patch('redgit.core.prompt.BUILTIN_PROMPTS_DIR', tmp_path):
-            with patch('redgit.core.prompt.RETGIT_DIR', tmp_path / ".redgit"):
-                with patch('redgit.core.prompt.get_builtin_plugins', return_value=["laravel", "django"]):
+        with patch('redgit.core.common.prompt.BUILTIN_PROMPTS_DIR', tmp_path):
+            with patch('redgit.core.common.prompt.RETGIT_DIR', tmp_path / ".redgit"):
+                with patch('redgit.core.common.prompt.get_builtin_plugins', return_value=["laravel", "django"]):
                     # Create a test prompt file
                     (tmp_path / "test.md").write_text("test")
 
@@ -555,8 +555,8 @@ class TestPromptManagerListAllPrompts:
 
     def test_returns_dict(self):
         """Test that list_all_prompts returns a dict."""
-        with patch('redgit.core.prompt.PROMPT_CATEGORIES', {}):
-            with patch('redgit.core.prompt.RETGIT_DIR', Path("/nonexistent")):
+        with patch('redgit.core.common.prompt.PROMPT_CATEGORIES', {}):
+            with patch('redgit.core.common.prompt.RETGIT_DIR', Path("/nonexistent")):
                 with patch('redgit.integrations.registry.get_all_integration_classes', return_value={}):
                     result = PromptManager.list_all_prompts()
                     assert isinstance(result, dict)
@@ -569,8 +569,8 @@ class TestPromptManagerListAllPrompts:
         (commit_dir / "default.md").write_text("default")
         (commit_dir / "minimal.md").write_text("minimal")
 
-        with patch('redgit.core.prompt.PROMPT_CATEGORIES', {"commit": commit_dir}):
-            with patch('redgit.core.prompt.RETGIT_DIR', Path("/nonexistent")):
+        with patch('redgit.core.common.prompt.PROMPT_CATEGORIES', {"commit": commit_dir}):
+            with patch('redgit.core.common.prompt.RETGIT_DIR', Path("/nonexistent")):
                 with patch('redgit.integrations.registry.get_all_integration_classes', return_value={}):
                     result = PromptManager.list_all_prompts()
 

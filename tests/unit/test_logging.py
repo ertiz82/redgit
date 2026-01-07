@@ -389,8 +389,8 @@ class TestConfigManagerLogging:
     @pytest.fixture
     def config_manager(self, tmp_path):
         """Create a ConfigManager with temp directory."""
-        from redgit.core.config import ConfigManager, RETGIT_DIR, CONFIG_PATH
-        import redgit.core.config as config_module
+        from redgit.core.common.config import ConfigManager, RETGIT_DIR, CONFIG_PATH
+        import redgit.core.common.config as config_module
 
         # Temporarily override paths
         original_dir = config_module.RETGIT_DIR

@@ -54,7 +54,7 @@ class TestIntegrationType:
 
     def test_all_types_count(self):
         """Test that all expected types exist."""
-        assert len(IntegrationType) == 6
+        assert len(IntegrationType) == 7
 
 
 class TestIssueDataclass:

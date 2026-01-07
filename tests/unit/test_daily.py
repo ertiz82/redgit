@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from redgit.core.daily_state import DailyStateManager, DAILY_STATE_PATH
+from redgit.core.daily.state import DailyStateManager, DAILY_STATE_PATH
 from redgit.commands.daily import (
     get_commits_since,
     format_commits_for_llm,
@@ -50,7 +50,7 @@ class TestDailyStateManager:
     @pytest.fixture
     def state_manager(self, tmp_path):
         """Create a state manager with temp path."""
-        import redgit.core.daily_state as daily_state_module
+        import redgit.core.daily.state as daily_state_module
 
         # Override the path
         original_path = daily_state_module.DAILY_STATE_PATH
@@ -126,7 +126,7 @@ class TestDailyStateManagerParseSinceOption:
     @pytest.fixture
     def state_manager(self, tmp_path):
         """Create a state manager with temp path."""
-        import redgit.core.daily_state as daily_state_module
+        import redgit.core.daily.state as daily_state_module
 
         original_path = daily_state_module.DAILY_STATE_PATH
         daily_state_module.DAILY_STATE_PATH = tmp_path / ".redgit" / "daily_state.yaml"
@@ -503,7 +503,7 @@ class TestLoadDailyPrompt:
 
     def test_uses_project_prompt_if_exists(self, tmp_path):
         """Test loading from project-specific prompt."""
-        import redgit.core.config as config_module
+        import redgit.core.common.config as config_module
 
         # Setup temp path
         original_dir = config_module.RETGIT_DIR

@@ -77,40 +77,40 @@ quality:
 
     def test_config_path(self, temp_config):
         """Test config path command."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "path"])
                 assert result.exit_code == 0
                 assert "config.yaml" in result.stdout
 
     def test_config_get_existing_value(self, temp_config):
         """Test config get for existing value."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "get", "project.name"])
                 assert result.exit_code == 0
                 assert "test-project" in result.stdout
 
     def test_config_get_nested_value(self, temp_config):
         """Test config get for nested value."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "get", "llm.provider"])
                 assert result.exit_code == 0
                 assert "claude-code" in result.stdout
 
     def test_config_get_missing_value(self, temp_config):
         """Test config get for missing value."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "get", "nonexistent.path"])
                 assert result.exit_code == 1
                 assert "not found" in result.stdout
 
     def test_config_set_value(self, temp_config):
         """Test config set command."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "set", "quality.threshold", "80"])
                 assert result.exit_code == 0
 
@@ -120,52 +120,52 @@ quality:
 
     def test_config_set_boolean_true(self, temp_config):
         """Test config set with boolean true."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "set", "quality.enabled", "true"])
                 assert result.exit_code == 0
 
     def test_config_set_boolean_false(self, temp_config):
         """Test config set with boolean false."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "set", "notifications.enabled", "false"])
                 assert result.exit_code == 0
 
     def test_config_show_section(self, temp_config):
         """Test config show for a section."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "show", "llm"])
                 assert result.exit_code == 0
                 assert "provider" in result.stdout or "llm" in result.stdout
 
     def test_config_show_missing_section(self, temp_config):
         """Test config show for missing section."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "show", "nonexistent"])
                 assert "not found" in result.stdout or "empty" in result.stdout
 
     def test_config_list(self, temp_config):
         """Test config list command."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "list"])
                 assert result.exit_code == 0
                 assert "project" in result.stdout or "llm" in result.stdout
 
     def test_config_list_section(self, temp_config):
         """Test config list for a section."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "list", "llm"])
                 assert result.exit_code == 0
 
     def test_config_yaml(self, temp_config):
         """Test config yaml command."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "yaml"])
                 assert result.exit_code == 0
                 # Should output YAML content
@@ -173,63 +173,63 @@ quality:
 
     def test_config_yaml_section(self, temp_config):
         """Test config yaml for a section."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "yaml", "llm"])
                 assert result.exit_code == 0
 
     def test_config_unset_existing(self, temp_config):
         """Test config unset for existing value."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "unset", "quality.threshold"])
                 assert result.exit_code == 0
                 assert "Removed" in result.stdout
 
     def test_config_unset_missing(self, temp_config):
         """Test config unset for missing value."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "unset", "nonexistent.path"])
                 assert result.exit_code == 1
                 assert "not found" in result.stdout
 
     def test_config_notifications(self, temp_config):
         """Test config notifications command."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "notifications"])
                 assert result.exit_code == 0
                 assert "Notification" in result.stdout
 
     def test_config_quality_show(self, temp_config):
         """Test config quality command shows status."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "quality"])
                 assert result.exit_code == 0
                 assert "Quality" in result.stdout
 
     def test_config_quality_enable(self, temp_config):
         """Test config quality --enable."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "quality", "--enable"])
                 assert result.exit_code == 0
                 assert "enabled" in result.stdout
 
     def test_config_quality_disable(self, temp_config):
         """Test config quality --disable."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "quality", "--disable"])
                 assert result.exit_code == 0
                 assert "disabled" in result.stdout
 
     def test_config_quality_threshold(self, temp_config):
         """Test config quality --threshold."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "quality", "--threshold", "85"])
                 assert result.exit_code == 0
                 assert "85" in result.stdout
@@ -254,8 +254,8 @@ semgrep:
 
     def test_semgrep_show_status(self, temp_config):
         """Test config semgrep shows status."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 with patch('redgit.commands.config._check_semgrep_installed', return_value=False):
                     result = runner.invoke(app, ["config", "semgrep"])
                     assert result.exit_code == 0
@@ -263,8 +263,8 @@ semgrep:
 
     def test_semgrep_list_rules(self, temp_config):
         """Test config semgrep --list-rules."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "semgrep", "--list-rules"])
                 assert result.exit_code == 0
                 assert "security-audit" in result.stdout
@@ -272,16 +272,16 @@ semgrep:
 
     def test_semgrep_add_config(self, temp_config):
         """Test config semgrep --add."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "semgrep", "--add", "p/python"])
                 assert result.exit_code == 0
                 assert "Added" in result.stdout or "p/python" in result.stdout
 
     def test_semgrep_remove_config(self, temp_config):
         """Test config semgrep --remove."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "semgrep", "--remove", "auto"])
                 assert result.exit_code == 0
                 assert "Removed" in result.stdout or "auto" in result.stdout
@@ -351,32 +351,32 @@ workflow:
 
     def test_reset_notifications_with_force(self, temp_config):
         """Test config reset notifications --force."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "reset", "notifications", "--force"])
                 assert result.exit_code == 0
                 assert "Reset" in result.stdout
 
     def test_reset_quality_with_force(self, temp_config):
         """Test config reset quality --force."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "reset", "quality", "--force"])
                 assert result.exit_code == 0
                 assert "Reset" in result.stdout
 
     def test_reset_workflow_with_force(self, temp_config):
         """Test config reset workflow --force."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "reset", "workflow", "--force"])
                 assert result.exit_code == 0
                 assert "Reset" in result.stdout
 
     def test_reset_unknown_section(self, temp_config):
         """Test config reset with unknown section."""
-        with patch('redgit.core.config.RETGIT_DIR', temp_config / ".redgit"):
-            with patch('redgit.core.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
+        with patch('redgit.core.common.config.RETGIT_DIR', temp_config / ".redgit"):
+            with patch('redgit.core.common.config.CONFIG_PATH', temp_config / ".redgit" / "config.yaml"):
                 result = runner.invoke(app, ["config", "reset", "unknown", "--force"])
                 assert "No defaults" in result.stdout
 
