@@ -11,8 +11,8 @@ from typing import Optional
 from rich.console import Console
 from rich.table import Table
 
-from ..core.config import ConfigManager
-from ..core.webhook import (
+from ..core.common.config import ConfigManager
+from ..core.webhook.server import (
     WebhookServer,
     load_webhook_state,
     save_webhook_state,
@@ -20,7 +20,7 @@ from ..core.webhook import (
     start_daemon,
     stop_daemon
 )
-from ..core.actions import ActionRegistry
+from ..core.webhook.actions import ActionRegistry
 from ..integrations.registry import get_notification, get_tunnel_integration
 
 console = Console()
@@ -210,7 +210,7 @@ def test_cmd(
         console.print(f"[red]Invalid JSON: {e}[/red]")
         raise typer.Exit(1)
 
-    from ..core.actions import ActionContext
+    from ..core.webhook.actions import ActionContext
 
     context = ActionContext(
         user_id="test",
