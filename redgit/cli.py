@@ -21,6 +21,7 @@ from redgit.commands.scout import scout_app
 from redgit.commands.webhook import webhook_app
 from redgit.commands.tunnel import tunnel_app
 from redgit.commands.poker import poker_app
+from redgit.commands.backup import app as backup_app
 
 
 def version_callback(value: bool):
@@ -67,12 +68,13 @@ app.add_typer(scout_app, name="scout")
 app.add_typer(webhook_app, name="webhook")
 app.add_typer(tunnel_app, name="tunnel")
 app.add_typer(poker_app, name="poker")
+app.add_typer(backup_app, name="backup")
 
 
 def _load_plugin_commands():
     """Dynamically load commands from enabled plugins."""
     try:
-        from redgit.core.config import ConfigManager
+        from redgit.core.common.config import ConfigManager
         from redgit.plugins.registry import get_enabled_plugin_commands, get_all_plugin_shortcuts
 
         config = ConfigManager().load()
@@ -99,13 +101,13 @@ def _load_plugin_commands():
 
 
 def _load_integration_commands():
-    """Dynamically load commands from active integrations."""
+    """Dynamically load commands from installed integrations."""
     try:
-        from redgit.core.config import ConfigManager
-        from redgit.integrations.registry import get_active_integration_commands
+        from redgit.integrations.registry import get_all_integration_commands
 
-        config = ConfigManager().load()
-        commands = get_active_integration_commands(config)
+        # Load commands for ALL installed integrations (not just active ones)
+        # This allows `rg jira`, `rg gitlab` etc. to work regardless of activation
+        commands = get_all_integration_commands()
 
         for name, cmd_app in commands.items():
             app.add_typer(cmd_app, name=name)
@@ -117,7 +119,7 @@ def _load_integration_commands():
 def _setup_logging():
     """Set up logging based on config."""
     try:
-        from redgit.core.config import ConfigManager
+        from redgit.core.common.config import ConfigManager
 
         config_manager = ConfigManager()
         logging_config = config_manager.get_logging_config()
