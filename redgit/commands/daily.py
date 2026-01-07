@@ -12,10 +12,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..core.config import ConfigManager, RETGIT_DIR
-from ..core.daily_state import DailyStateManager
-from ..core.gitops import GitOps, NotAGitRepoError
-from ..core.llm import LLMClient
+from ..core.common.config import ConfigManager, RETGIT_DIR
+from ..core.daily.state import DailyStateManager
+from ..core.common.gitops import GitOps, NotAGitRepoError
+from ..core.common.llm import LLMClient
 
 console = Console()
 
