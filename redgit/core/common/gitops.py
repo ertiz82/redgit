@@ -793,6 +793,59 @@ class GitOps:
                 self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
             return False, False, str(e)
 
+    def is_behind_branch(self, branch: str, base_branch: str = None) -> tuple:
+        """
+        Check if branch is behind base branch.
+
+        Args:
+            branch: Branch to check
+            base_branch: Branch to compare against (default: original_branch)
+
+        Returns:
+            Tuple of (is_behind: bool, commit_count: int)
+        """
+        if base_branch is None:
+            base_branch = self.original_branch
+
+        try:
+            # Count commits that are in base but not in branch
+            count = self.repo.git.rev_list("--count", f"{branch}..{base_branch}")
+            behind_count = int(count.strip())
+            return (behind_count > 0, behind_count)
+        except Exception:
+            return (False, 0)
+
+    def rebase_from_branch(self, target_branch: str, base_branch: str = None) -> tuple:
+        """
+        Rebase target branch onto base branch.
+
+        Args:
+            target_branch: Branch to rebase
+            base_branch: Branch to rebase onto (default: original_branch)
+
+        Returns:
+            Tuple of (success: bool, error_message: str or None)
+        """
+        if base_branch is None:
+            base_branch = self.original_branch
+
+        try:
+            # Ensure we're on target branch
+            current = self.repo.active_branch.name
+            if current != target_branch:
+                self.repo.git.checkout(target_branch)
+
+            # Perform rebase
+            self.repo.git.rebase(base_branch)
+            return (True, None)
+        except Exception as e:
+            # Rebase conflict - abort and return error
+            try:
+                self.repo.git.rebase("--abort")
+            except Exception:
+                pass
+            return (False, str(e))
+
     def merge_branch(
         self,
         source_branch: str,
