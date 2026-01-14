@@ -385,16 +385,17 @@ def show_multi_task_summary(result: dict, subtask_mode: bool = True) -> None:
     subtasks will be created under each.
 
     Args:
-        result: Dict with task_assignments and unmatched_files
+        result: Dict with task_assignments, unmatched_groups, and unmatched_files
         subtask_mode: If True, show subtask creation info; if False, show commit-only info
     """
     mode_label = "Subtask Mode" if subtask_mode else "Commit Mode"
     console.print(f"\n[bold cyan]═══ Multi-Task Analysis Results ({mode_label}) ═══[/bold cyan]\n")
 
     task_assignments = result.get("task_assignments", [])
+    unmatched_groups = result.get("unmatched_groups", [])
     unmatched_files = result.get("unmatched_files", [])
 
-    if not task_assignments and not unmatched_files:
+    if not task_assignments and not unmatched_groups and not unmatched_files:
         console.print("[yellow]No assignments found. Check if files match any active tasks.[/yellow]")
         return
 
@@ -418,7 +419,20 @@ def show_multi_task_summary(result: dict, subtask_mode: bool = True) -> None:
 
         console.print("")  # Empty line between tasks
 
-    # Show unmatched files
+    # Show unmatched groups (with suggested epic titles)
+    if unmatched_groups:
+        unmatched_file_count = sum(len(g.get("files", [])) for g in unmatched_groups)
+        console.print(f"[bold yellow]📦 Suggested Epics ({unmatched_file_count} files → {len(unmatched_groups)} epics)[/bold yellow]")
+
+        for i, group in enumerate(unmatched_groups, 1):
+            issue_title = group.get("issue_title", "N/A")[:50]
+            files = group.get("files", [])
+            console.print(f"     {i}. {issue_title}")
+            console.print(f"        [dim]{len(files)} files[/dim]")
+
+        console.print("")
+
+    # Show unmatched files (orphan files)
     if unmatched_files:
         console.print(f"[yellow]⚠️  Unmatched ({len(unmatched_files)} files):[/yellow]")
         for f in unmatched_files[:5]:
@@ -432,7 +446,7 @@ def show_multi_task_dry_run(result: dict, task_mgmt: Optional[Any], subtask_mode
     Show dry-run summary for multi-task mode.
 
     Args:
-        result: Dict with task_assignments and unmatched_files
+        result: Dict with task_assignments, unmatched_groups, and unmatched_files
         task_mgmt: Task management integration for branch formatting
         subtask_mode: If True, show subtask creation info; if False, show commit-only info
     """
@@ -440,6 +454,7 @@ def show_multi_task_dry_run(result: dict, task_mgmt: Optional[Any], subtask_mode
     console.print(f"\n[bold yellow]═══ DRY RUN SUMMARY ({mode_label}) ═══[/bold yellow]")
 
     task_assignments = result.get("task_assignments", [])
+    unmatched_groups = result.get("unmatched_groups", [])
     unmatched_files = result.get("unmatched_files", [])
 
     total_groups = sum(
@@ -475,7 +490,27 @@ def show_multi_task_dry_run(result: dict, task_mgmt: Optional[Any], subtask_mode
 
         console.print("")  # Empty line between parent tasks
 
-    # Show unmatched files
+    # Show unmatched groups (suggested epics)
+    if unmatched_groups:
+        unmatched_group_files = sum(len(g.get("files", [])) for g in unmatched_groups)
+        console.print(f"[bold yellow]📦 Suggested Epics ({unmatched_group_files} files → {len(unmatched_groups)} epics)[/bold yellow]")
+        console.print("[dim]   These files don't match any active task. Suggested epic titles:[/dim]")
+
+        for i, group in enumerate(unmatched_groups, 1):
+            files = group.get("files", [])
+            issue_title = group.get("issue_title", "N/A")
+            issue_desc = group.get("issue_description", "")[:80]
+
+            console.print(f"\n  [bold]Suggested Epic #{i}[/bold]")
+            console.print(f"      [dim]Title:[/dim]   {issue_title[:60]}")
+            if issue_desc:
+                console.print(f"      [dim]Desc:[/dim]    {issue_desc}")
+            console.print(f"      [dim]Files:[/dim]   {len(files)}")
+            display_file_list(files, max_display=3, indent="               ")
+
+        console.print("")
+
+    # Show orphan unmatched files
     if unmatched_files:
         console.print(f"[yellow]⚠️  Unmatched files ({len(unmatched_files)}):[/yellow]")
         console.print("[dim]   These files did not match any active task:[/dim]")
@@ -500,6 +535,10 @@ def show_multi_task_dry_run(result: dict, task_mgmt: Optional[Any], subtask_mode
         for f in [g.get("files", [])]
     )
     console.print(f"   Files assigned: {total_files}")
+
+    if unmatched_groups:
+        unmatched_group_files = sum(len(g.get("files", [])) for g in unmatched_groups)
+        console.print(f"   Suggested epics: {len(unmatched_groups)} ({unmatched_group_files} files)")
 
     if unmatched_files:
         console.print(f"   Unmatched files: {len(unmatched_files)}")
