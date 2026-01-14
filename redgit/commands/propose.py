@@ -136,14 +136,6 @@ def _init_propose_context(
         "subtasks": subtasks,
     }
 
-    # Check for usage pattern suggestion (only when no params provided)
-    if not any([prompt, no_task, task, dry_run, verbose, detailed, subtasks]):
-        common_pattern = state_manager.get_common_propose_pattern()
-        if common_pattern and len(common_pattern) > 0:
-            if _suggest_and_ask_pattern(common_pattern):
-                values = _prompt_for_pattern_values(common_pattern)
-                options.update(values)
-
     return config_manager, state_manager, config, options
 
 
@@ -368,13 +360,6 @@ def _finalize_propose_session(
         # Send session summary notification
         _send_session_summary_notification(config, len(branches), len(issues))
 
-    # Track usage pattern for future suggestions
-    current_params = _extract_param_pattern(
-        prompt=prompt, no_task=no_task, task=task,
-        dry_run=dry_run, verbose=verbose, detailed=detailed, subtasks=subtasks
-    )
-    state_manager.add_propose_usage(current_params)
-
 
 # =============================================================================
 # PROPOSE COMMAND
@@ -442,20 +427,6 @@ def propose_cmd(
     state_manager = StateManager()
     config = config_manager.load()
     logger.debug("Config loaded successfully")
-
-    # Check for usage pattern suggestion (only when no params provided)
-    if not any([prompt, no_task, task, dry_run, verbose, detailed, subtasks]):
-        common_pattern = state_manager.get_common_propose_pattern()
-        if common_pattern and len(common_pattern) > 0:
-            if _suggest_and_ask_pattern(common_pattern):
-                values = _prompt_for_pattern_values(common_pattern)
-                task = values.get("task")
-                subtasks = values.get("subtasks", False)
-                detailed = values.get("detailed", False)
-                dry_run = values.get("dry_run", False)
-                verbose = values.get("verbose", False)
-                no_task = values.get("no_task", False)
-                prompt = values.get("prompt")
 
     # Verbose: Show config paths
     if verbose:
@@ -538,6 +509,11 @@ def propose_cmd(
             console.print("[dim]Configure Jira or another task management in .redgit/config.yaml[/dim]")
             raise typer.Exit(1)
 
+        # Auto-enable subtask mode for multi mode (parent tasks get subtasks)
+        if not subtask_mode:
+            subtask_mode = True
+            console.print("[cyan]--multi: Subtask mode otomatik aktif edildi[/cyan]")
+
         # task parameter can be comma-separated for multi mode
         task_filter = task  # None if not specified, otherwise comma-separated IDs
 
@@ -606,13 +582,6 @@ def propose_cmd(
                 detailed=detailed,
                 force=force
             )
-
-            # Track usage pattern for future suggestions
-            current_params = _extract_param_pattern(
-                prompt=prompt, no_task=no_task, task=task,
-                dry_run=dry_run, verbose=verbose, detailed=detailed, subtasks=subtasks
-            )
-            state_manager.add_propose_usage(current_params)
 
             # Mark backup as completed on success
             if backup_id:
@@ -1857,78 +1826,6 @@ def _parse_detailed_result(result: str, original_group: Dict) -> Dict:
 # Usage Pattern Tracking Functions
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_param_pattern(
-    prompt: Optional[str],
-    no_task: bool,
-    task: Optional[str],
-    dry_run: bool,
-    verbose: bool,
-    detailed: bool,
-    subtasks: bool
-) -> List[str]:
-    """Extract parameter names that were explicitly set.
-
-    Returns a sorted list of parameter flags that were used.
-    Values are excluded - only the flag names are tracked.
-    """
-    params = []
-    if task:
-        params.append("-t")
-    if subtasks:
-        params.append("--subtasks")
-    if detailed:
-        params.append("--detailed")
-    if dry_run:
-        params.append("--dry-run")
-    if verbose:
-        params.append("--verbose")
-    if no_task:
-        params.append("--no-task")
-    if prompt:
-        params.append("-p")
-    return sorted(params)
-
-
-def _is_bare_command(params: List[str]) -> bool:
-    """Check if command was run without any parameters."""
-    return len(params) == 0
-
-
-def _suggest_and_ask_pattern(pattern: List[str]) -> bool:
-    """Show suggestion and ask user if they want to use the common pattern.
-
-    Returns True if user accepts, False if declined.
-    """
-    pattern_str = " ".join(pattern)
-    console.print(f"\n[cyan]💡 Sık kullandığınız: rg propose {pattern_str}[/cyan]")
-    console.print("[dim]Son 5 kullanımınıza göre[/dim]\n")
-    return Confirm.ask("Bu şekilde kullanmak ister misiniz?", default=True)
-
-
-def _prompt_for_pattern_values(pattern: List[str]) -> Dict[str, Any]:
-    """Ask user for required values for the pattern.
-
-    Returns dict with parameter values ready to use.
-    """
-    values: Dict[str, Any] = {}
-
-    # Ask for values for params that require input
-    if "-t" in pattern:
-        values["task"] = Prompt.ask("Task ID (örn: SCRUM-123)")
-
-    if "-p" in pattern:
-        values["prompt"] = Prompt.ask("Prompt şablonu", default="default")
-
-    # Boolean flags don't need values - just set them
-    values["subtasks"] = "--subtasks" in pattern
-    values["detailed"] = "--detailed" in pattern
-    values["dry_run"] = "--dry-run" in pattern
-    values["verbose"] = "--verbose" in pattern
-    values["no_task"] = "--no-task" in pattern
-
-    return values
-
-
 # =============================================================================
 # TASK-FILTERED MODE FUNCTIONS
 # =============================================================================
@@ -2116,6 +2013,83 @@ def _save_interactive_preferences(options: dict, config: dict) -> None:
 # MULTI-TASK MODE
 # =============================================================================
 
+def _transform_scout_result_to_multi_task(scout_result: dict, parent_tasks: list) -> dict:
+    """
+    Transform scout's analyze_changes result to multi-task format.
+
+    Scout format:
+    {
+        "matched": [
+            {"files": [...], "commit_title": "...", "issue_key": "SCRUM-123", "_issue": Issue}
+        ],
+        "unmatched": [
+            {"files": [...], "commit_title": "...", "issue_title": "...", "issue_description": "..."}
+        ]
+    }
+
+    Multi-task format:
+    {
+        "task_assignments": [
+            {
+                "task_key": "SCRUM-123",
+                "subtask_groups": [
+                    {"files": [...], "commit_title": "...", "issue_title": "...", "issue_description": "..."}
+                ]
+            }
+        ],
+        "unmatched_groups": [...],
+        "unmatched_files": []
+    }
+    """
+    matched = scout_result.get("matched", [])
+    unmatched = scout_result.get("unmatched", [])
+
+    # Group matched items by task_key
+    task_groups = {}
+    for group in matched:
+        task_key = group.get("issue_key")
+        if not task_key:
+            continue
+
+        if task_key not in task_groups:
+            task_groups[task_key] = []
+
+        # Create subtask group with all needed fields
+        subtask_group = {
+            "files": group.get("files", []),
+            "commit_title": group.get("commit_title", ""),
+            "commit_body": group.get("commit_body", ""),
+            "issue_title": group.get("issue_title") or group.get("commit_title", ""),
+            "issue_description": group.get("issue_description") or group.get("commit_body", "")
+        }
+        task_groups[task_key].append(subtask_group)
+
+    # Build task_assignments list
+    task_assignments = []
+    for task_key, subtask_groups in task_groups.items():
+        task_assignments.append({
+            "task_key": task_key,
+            "subtask_groups": subtask_groups
+        })
+
+    # Unmatched groups already have the right format
+    unmatched_groups = []
+    for group in unmatched:
+        unmatched_groups.append({
+            "files": group.get("files", []),
+            "commit_title": group.get("commit_title", ""),
+            "commit_body": group.get("commit_body", ""),
+            "issue_title": group.get("issue_title", ""),
+            "issue_description": group.get("issue_description", "")
+        })
+
+    return {
+        "task_assignments": task_assignments,
+        "unmatched_groups": unmatched_groups,
+        "unmatched_files": []  # Scout groups all files, so no orphan files
+    }
+
+
 def _process_multi_task_mode(
     changes: List[Dict],
     gitops: GitOps,
@@ -2244,26 +2218,27 @@ def _process_multi_task_mode(
         else:
             console.print(f"  [dim]• {t.key}: {t.summary[:50]}[/dim]")
 
-    # 2. Build and send prompt
-    llm = LLMClient(config.get("llm", {}))
-    prompt_manager = PromptManager(config.get("llm", {}))
-    issue_language = getattr(task_mgmt, 'issue_language', None)
+    # 2. Use scout's analyze_changes for consistent results
+    from ..core.scout import get_scout
+    scout = get_scout(config.get("scout", {}))
 
-    prompt = prompt_manager.get_multi_task_prompt(
+    console.print("\n[yellow]AI analyzing changes for multiple tasks...[/yellow]")
+
+    # Convert changes to format scout expects
+    scout_result = scout.analyze_changes(
         changes=changes,
-        parent_tasks=parent_tasks,
-        issue_language=issue_language
+        task_mgmt=task_mgmt,
+        verbose=verbose,
+        gitops=gitops
     )
 
     if verbose:
-        console.print(f"\n[dim]Prompt length: {len(prompt)} characters[/dim]")
+        console.print(f"\n[dim]Scout analysis result:[/dim]")
+        console.print(f"[dim]Matched: {len(scout_result.get('matched', []))} groups[/dim]")
+        console.print(f"[dim]Unmatched: {len(scout_result.get('unmatched', []))} groups[/dim]")
 
-    console.print("\n[yellow]AI analyzing changes for multiple tasks...[/yellow]")
-    result, raw_output = llm.generate_multi_task_groups(prompt, return_raw=True)
-
-    if verbose:
-        console.print(f"\n[dim]Raw AI output:[/dim]")
-        console.print(f"[dim]{raw_output[:1000]}...[/dim]")
+    # Transform scout result to multi-task format
+    result = _transform_scout_result_to_multi_task(scout_result, parent_tasks)
 
     # 3. Handle dry run
     if dry_run:
@@ -2275,10 +2250,19 @@ def _process_multi_task_mode(
     from ..core.propose.display import show_multi_task_summary
     show_multi_task_summary(result, subtask_mode)
 
-    # 5. Confirm and process each task
-    confirm_msg = "\nProceed with subtask creation?" if subtask_mode else "\nProceed with commits?"
-    if not Confirm.ask(confirm_msg):
-        console.print("[yellow]Cancelled.[/yellow]")
+    task_assignments = result.get("task_assignments", [])
+    unmatched_groups = result.get("unmatched_groups", [])
+
+    # 5. Confirm and process matched tasks (if any)
+    if task_assignments:
+        confirm_msg = "\nProceed with subtask creation?" if subtask_mode else "\nProceed with commits?"
+        if not Confirm.ask(confirm_msg):
+            console.print("[yellow]Matched task processing cancelled.[/yellow]")
+            task_assignments = []  # Skip task processing
+
+    # If nothing to process, exit early
+    if not task_assignments and not unmatched_groups:
+        console.print("[yellow]No tasks to process.[/yellow]")
         return
 
     # 6. Initialize session tracking
@@ -2289,6 +2273,10 @@ def _process_multi_task_mode(
     state["session"]["branches"] = []
     state["session"]["issues"] = []
     state["session"]["subtask_issues"] = []
+
+    # Track branches with rebase conflicts or user skipped rebase
+    skipped_branches = set()
+    rebased_branches = set()  # Branches that were successfully rebased
 
     # 7. Process each task assignment
     for assignment in result.get("task_assignments", []):
@@ -2334,8 +2322,67 @@ def _process_multi_task_mode(
                         branch_name = task_mgmt.format_branch_name(subtask_key, issue_title)
 
                         if workflow_strategy == "merge-request":
+                            # Check if branch was already skipped due to conflict
+                            if branch_name in skipped_branches:
+                                console.print(f"  [yellow]⚠️ Branch '{branch_name}' daha önce atlandı (rebase conflict), bu grup da atlanıyor[/yellow]")
+                                continue
+
                             # Create separate branch for each subtask
-                            gitops.checkout_or_create_branch(branch_name)
+                            # Check if branch exists and needs rebase
+                            local_branches = [b.name for b in gitops.repo.branches]
+                            if branch_name in local_branches:
+                                # Skip rebase check if already rebased in this session
+                                if branch_name not in rebased_branches:
+                                    is_behind, count = gitops.is_behind_branch(branch_name, original_branch)
+                                    if is_behind:
+                                        console.print(f"\n  [yellow]⚠️  Branch '{branch_name}' base branch'ten {count} commit geride[/yellow]")
+                                        if Confirm.ask("  Rebase yapılsın mı?", default=True):
+                                            # Stash changes before checkout
+                                            stash_name = f"redgit-rebase-{branch_name}"
+                                            stash_created = False
+                                            try:
+                                                gitops.repo.git.stash("push", "-u", "-m", stash_name)
+                                                stash_created = True
+                                            except Exception:
+                                                pass
+
+                                            try:
+                                                gitops.repo.git.checkout(branch_name)
+                                                success, error = gitops.rebase_from_branch(branch_name, original_branch)
+                                                if not success:
+                                                    console.print(f"  [red]❌ Rebase conflict: {error}[/red]")
+                                                    console.print("  [yellow]Bu branch'e giden tüm gruplar atlanacak[/yellow]")
+                                                    skipped_branches.add(branch_name)
+                                                    # Restore stash and go back
+                                                    gitops.repo.git.checkout(original_branch)
+                                                    if stash_created:
+                                                        try:
+                                                            gitops.repo.git.stash("pop")
+                                                        except Exception:
+                                                            pass
+                                                    continue
+                                                console.print(f"  [green]✓ Rebase başarılı[/green]")
+                                                rebased_branches.add(branch_name)
+                                            finally:
+                                                # Restore stash after rebase
+                                                if stash_created:
+                                                    try:
+                                                        gitops.repo.git.stash("pop")
+                                                    except Exception:
+                                                        pass
+                                        else:
+                                            console.print("  [dim]Rebase atlandı, mevcut branch kullanılıyor[/dim]")
+                                            # Use checkout_or_create_branch which handles stashing
+                                            gitops.checkout_or_create_branch(branch_name)
+                                    else:
+                                        # Use checkout_or_create_branch which handles stashing
+                                        gitops.checkout_or_create_branch(branch_name)
+                                else:
+                                    # Already rebased, just checkout
+                                    gitops.checkout_or_create_branch(branch_name)
+                            else:
+                                gitops.checkout_or_create_branch(branch_name, from_branch=original_branch)
+
                             gitops.stage_files(files)
                             full_commit = build_commit_message(commit_title, commit_body)
                             gitops.commit(full_commit)
@@ -2382,13 +2429,68 @@ def _process_multi_task_mode(
                         # Create branch for parent task
                         branch_name = task_mgmt.format_branch_name(parent_key, issue_title)
 
+                        # Check if branch was already skipped due to conflict
+                        if branch_name in skipped_branches:
+                            console.print(f"  [yellow]⚠️ Branch '{branch_name}' daha önce atlandı (rebase conflict), bu grup da atlanıyor[/yellow]")
+                            continue
+
                         # Check if we're already on this branch
                         current = gitops.repo.active_branch.name
                         if current != branch_name:
-                            try:
-                                gitops.repo.git.checkout(branch_name)
-                            except Exception:
-                                gitops.checkout_or_create_branch(branch_name)
+                            # Check if branch exists and needs rebase
+                            local_branches = [b.name for b in gitops.repo.branches]
+                            if branch_name in local_branches:
+                                # Skip rebase check if already rebased in this session
+                                if branch_name not in rebased_branches:
+                                    is_behind, count = gitops.is_behind_branch(branch_name, original_branch)
+                                    if is_behind:
+                                        console.print(f"\n  [yellow]⚠️  Branch '{branch_name}' base branch'ten {count} commit geride[/yellow]")
+                                        if Confirm.ask("  Rebase yapılsın mı?", default=True):
+                                            # Stash changes before checkout
+                                            stash_name = f"redgit-rebase-{branch_name}"
+                                            stash_created = False
+                                            try:
+                                                gitops.repo.git.stash("push", "-u", "-m", stash_name)
+                                                stash_created = True
+                                            except Exception:
+                                                pass
+
+                                            try:
+                                                gitops.repo.git.checkout(branch_name)
+                                                success, error = gitops.rebase_from_branch(branch_name, original_branch)
+                                                if not success:
+                                                    console.print(f"  [red]❌ Rebase conflict: {error}[/red]")
+                                                    console.print("  [yellow]Bu branch'e giden tüm gruplar atlanacak[/yellow]")
+                                                    skipped_branches.add(branch_name)
+                                                    # Restore stash and go back
+                                                    gitops.repo.git.checkout(original_branch)
+                                                    if stash_created:
+                                                        try:
+                                                            gitops.repo.git.stash("pop")
+                                                        except Exception:
+                                                            pass
+                                                    continue
+                                                console.print(f"  [green]✓ Rebase başarılı[/green]")
+                                                rebased_branches.add(branch_name)
+                                            finally:
+                                                # Restore stash after rebase
+                                                if stash_created:
+                                                    try:
+                                                        gitops.repo.git.stash("pop")
+                                                    except Exception:
+                                                        pass
+                                        else:
+                                            console.print("  [dim]Rebase atlandı, mevcut branch kullanılıyor[/dim]")
+                                            # Use checkout_or_create_branch which handles stashing
+                                            gitops.checkout_or_create_branch(branch_name)
+                                    else:
+                                        # Use checkout_or_create_branch which handles stashing
+                                        gitops.checkout_or_create_branch(branch_name)
+                                else:
+                                    # Already rebased, just checkout
+                                    gitops.checkout_or_create_branch(branch_name)
+                            else:
+                                gitops.checkout_or_create_branch(branch_name, from_branch=original_branch)
 
                         gitops.stage_files(files)
                         gitops.commit(full_commit)
@@ -2430,27 +2532,53 @@ def _process_multi_task_mode(
                     import traceback
                     console.print(f"  [dim]{traceback.format_exc()}[/dim]")
 
-    # 8. Save session
+    # 8. Save session (after matched tasks)
     state_manager.save(state)
-    console.print(f"\n[green]✓ Session saved ({len(state['session']['branches'])} branches)[/green]")
+    if task_assignments:
+        console.print(f"\n[green]✓ Session saved ({len(state['session']['branches'])} branches)[/green]")
 
-    # 9. Report unmatched files
+    # 9. Handle unmatched groups (Suggested Epics)
+    excluded_from_groups = []
+    if unmatched_groups:
+        excluded_from_groups = _handle_unmatched_groups(
+            unmatched_groups=unmatched_groups,
+            gitops=gitops,
+            task_mgmt=task_mgmt,
+            state_manager=state_manager,
+            config=config,
+            strategy=workflow_strategy,
+            filtered_tasks=filtered_tasks  # Proje ile eşleşen tasklar
+        )
+        # Note: state_manager.add_session_branch() already saves after each branch
+
+    # 10. Handle orphan unmatched files (let user decide what to do)
     unmatched = result.get("unmatched_files", [])
     if unmatched:
-        console.print(f"\n[yellow]Unmatched files ({len(unmatched)}):[/yellow]")
-        for f in unmatched[:10]:
-            console.print(f"  [dim]• {f}[/dim]")
-        if len(unmatched) > 10:
-            console.print(f"  [dim]... and {len(unmatched) - 10} more[/dim]")
+        excluded_files = _handle_unmatched_files(
+            files=unmatched,
+            gitops=gitops,
+            task_mgmt=task_mgmt,
+            state_manager=state_manager,
+            config=config,
+            strategy=workflow_strategy,
+            filtered_tasks=filtered_tasks  # Proje ile eşleşen tasklar
+        )
+        if excluded_files:
+            console.print(f"\n[yellow]⚠️  {len(excluded_files)} dosya commitlenmedi[/yellow]")
 
-    # 10. Return to original branch
+    # Report total excluded files
+    total_excluded = len(excluded_from_groups) + len(result.get("unmatched_files", []))
+    if excluded_from_groups:
+        console.print(f"\n[yellow]⚠️  {len(excluded_from_groups)} dosya (suggested epics'ten) working tree'de bırakıldı[/yellow]")
+
+    # 12. Return to original branch
     try:
         gitops.checkout_branch(original_branch)
         console.print(f"\n[green]✓ Returned to {original_branch}[/green]")
     except Exception:
         pass
 
-    # 11. Show next steps
+    # 13. Show next steps
     console.print("\n[bold cyan]Next steps:[/bold cyan]")
     if workflow_strategy == "merge-request":
         console.print("  [dim]• rg push --pr   - Push branches and create merge requests[/dim]")
@@ -2880,6 +3008,192 @@ def _process_other_task_matches(
                 console.print(f"[red]   ❌ Failed to commit[/red]")
         else:
             console.print(f"[dim]   Skipped - files left in working directory[/dim]")
+
+
+def _handle_unmatched_groups(
+    unmatched_groups: List[Dict],
+    gitops: GitOps,
+    task_mgmt: TaskManagementBase,
+    state_manager: StateManager,
+    config: dict,
+    strategy: str = "local-merge",
+    filtered_tasks: List = None
+) -> List[str]:
+    """
+    Handle file groups that don't match any existing task (Suggested Epics).
+
+    Options for each group:
+    1. Create epic/task and commit
+    2. Assign to existing task
+    3. Commit without task
+    4. Leave in working directory
+
+    Returns:
+        List of files that were excluded (left in working directory)
+    """
+    if not unmatched_groups:
+        return []
+
+    excluded_files = []
+    total_files = sum(len(g.get("files", [])) for g in unmatched_groups)
+
+    console.print(f"\n[bold yellow]📦 Suggested Epics için işlem ({total_files} dosya → {len(unmatched_groups)} grup)[/bold yellow]")
+
+    # Toplu işlem mi tek tek mi?
+    console.print("\n[bold]Nasıl işlemek istersiniz?[/bold]")
+    console.print("  [1] Her grup için task oluştur ve commit et")
+    console.print("  [2] Tümünü mevcut bir task'a ata (tek commit)")
+    console.print("  [3] Her grubu tasksız ayrı commit et")
+    console.print("  [4] Tümünü working tree'de bırak")
+    console.print("  [5] Her grup için ayrı ayrı sor")
+
+    choices = ["1", "2", "3", "4", "5"]
+    choice = Prompt.ask("Seçim", choices=choices, default="4")
+
+    if choice == "1":
+        # Her grup için epic/task oluştur
+        for group in unmatched_groups:
+            files = group.get("files", [])
+            issue_title = group.get("issue_title", "Untitled")
+            issue_description = group.get("issue_description", "")
+            commit_title = group.get("commit_title", f"feat: {issue_title}")
+
+            console.print(f"\n[cyan]Creating task: {issue_title[:50]}...[/cyan]")
+
+            issue_key = task_mgmt.create_issue(
+                summary=issue_title,
+                description=issue_description or f"Files:\n" + "\n".join(f"- {f}" for f in files),
+                issue_type="task"
+            )
+
+            if issue_key:
+                console.print(f"  [green]✓ Task oluşturuldu: {issue_key}[/green]")
+                branch_name = task_mgmt.format_branch_name(issue_key, issue_title)
+                msg = build_commit_message(title=commit_title, body=group.get("commit_body", ""), issue_ref=issue_key)
+                success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
+                if success:
+                    if strategy == "local-merge":
+                        console.print(f"  [green]✓ Committed and merged {branch_name}[/green]")
+                    else:
+                        console.print(f"  [green]✓ Committed to {branch_name}[/green]")
+                    state_manager.add_session_branch(branch_name, issue_key)
+                else:
+                    console.print(f"  [red]❌ Commit başarısız[/red]")
+                    excluded_files.extend(files)
+            else:
+                console.print(f"  [red]❌ Task oluşturulamadı[/red]")
+                excluded_files.extend(files)
+
+    elif choice == "2" and filtered_tasks:
+        # Tümünü mevcut bir task'a ata
+        console.print("\n[bold]Mevcut taskler:[/bold]")
+        for i, task in enumerate(filtered_tasks, 1):
+            console.print(f"  [{i}] {task.key}: {task.summary[:50]}")
+
+        task_choice = Prompt.ask("Task numarası seçin")
+        try:
+            idx = int(task_choice) - 1
+            if 0 <= idx < len(filtered_tasks):
+                selected_task = filtered_tasks[idx]
+                all_files = [f for g in unmatched_groups for f in g.get("files", [])]
+
+                branch_name = task_mgmt.format_branch_name(selected_task.key, selected_task.summary)
+                msg = build_commit_message(
+                    title=f"chore: add files to {selected_task.key}",
+                    body="",
+                    issue_ref=selected_task.key
+                )
+                success = gitops.create_branch_and_commit(branch_name, all_files, msg, strategy=strategy)
+                if success:
+                    if strategy == "local-merge":
+                        console.print(f"[green]✓ Committed and merged {branch_name}[/green]")
+                    else:
+                        console.print(f"[green]✓ Committed to {branch_name}[/green]")
+                    state_manager.add_session_branch(branch_name, selected_task.key)
+                else:
+                    excluded_files = all_files
+            else:
+                console.print("[yellow]Geçersiz seçim, dosyalar working tree'de bırakıldı[/yellow]")
+                excluded_files = [f for g in unmatched_groups for f in g.get("files", [])]
+        except ValueError:
+            console.print("[yellow]Geçersiz giriş, dosyalar working tree'de bırakıldı[/yellow]")
+            excluded_files = [f for g in unmatched_groups for f in g.get("files", [])]
+
+    elif choice == "3":
+        # Her grubu tasksız ayrı commit olarak at
+        for group in unmatched_groups:
+            files = group.get("files", [])
+            issue_title = group.get("issue_title", "Untitled")
+            commit_title = group.get("commit_title", f"chore: {issue_title}")
+
+            console.print(f"\n[cyan]Committing: {commit_title[:50]}...[/cyan]")
+
+            # Branch adı oluştur
+            clean_title = commit_title.lower()
+            clean_title = "".join(c if c.isalnum() or c == " " else "" for c in clean_title)
+            clean_title = clean_title.strip().replace(" ", "-")[:40]
+            branch_name = f"chore/{clean_title}"
+
+            success = gitops.create_branch_and_commit(branch_name, files, commit_title, strategy=strategy)
+            if success:
+                if strategy == "local-merge":
+                    console.print(f"  [green]✓ Committed and merged {branch_name}[/green]")
+                else:
+                    console.print(f"  [green]✓ Committed to {branch_name}[/green]")
+                state_manager.add_session_branch(branch_name, None)
+            else:
+                console.print(f"  [red]❌ Commit başarısız[/red]")
+                excluded_files.extend(files)
+
+    elif choice == "5":
+        # Her grup için ayrı ayrı sor
+        for i, group in enumerate(unmatched_groups, 1):
+            files = group.get("files", [])
+            issue_title = group.get("issue_title", "Untitled")
+
+            console.print(f"\n[bold]Grup {i}/{len(unmatched_groups)}: {issue_title[:50]}[/bold]")
+            console.print(f"  [dim]{len(files)} dosya[/dim]")
+            for f in files[:5]:
+                console.print(f"    • {f}")
+            if len(files) > 5:
+                console.print(f"    ... ve {len(files) - 5} daha")
+
+            console.print("\n  [1] Task oluştur ve commit")
+            console.print("  [2] Working tree'de bırak")
+
+            grp_choice = Prompt.ask("  Seçim", choices=["1", "2"], default="2")
+
+            if grp_choice == "1":
+                issue_key = task_mgmt.create_issue(
+                    summary=issue_title,
+                    description=group.get("issue_description", ""),
+                    issue_type="task"
+                )
+                if issue_key:
+                    console.print(f"  [green]✓ Task oluşturuldu: {issue_key}[/green]")
+                    branch_name = task_mgmt.format_branch_name(issue_key, issue_title)
+                    commit_title = group.get("commit_title", f"feat: {issue_title}")
+                    msg = build_commit_message(title=commit_title, body=group.get("commit_body", ""), issue_ref=issue_key)
+                    success = gitops.create_branch_and_commit(branch_name, files, msg, strategy=strategy)
+                    if success:
+                        if strategy == "local-merge":
+                            console.print(f"  [green]✓ Committed and merged {branch_name}[/green]")
+                        else:
+                            console.print(f"  [green]✓ Committed to {branch_name}[/green]")
+                        state_manager.add_session_branch(branch_name, issue_key)
+                    else:
+                        excluded_files.extend(files)
+                else:
+                    console.print(f"  [red]❌ Task oluşturulamadı[/red]")
+                    excluded_files.extend(files)
+            else:
+                excluded_files.extend(files)
+
+    else:  # choice == "4"
+        console.print("[dim]Dosyalar working tree'de bırakıldı[/dim]")
+        excluded_files = [f for g in unmatched_groups for f in g.get("files", [])]
+
+    return excluded_files
 
 
 def _handle_unmatched_files(
