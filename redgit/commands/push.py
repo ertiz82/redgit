@@ -771,6 +771,12 @@ def _complete_issues(issues: List[str], task_mgmt):
     If transition_strategy is 'ask', prompts user to select target status.
     If transition_strategy is 'auto', uses status mapping and auto-advances if needed.
     """
+    # Remove duplicates while preserving order
+    # This prevents the same issue from being transitioned multiple times
+    # (e.g., when multiple branches reference the same issue)
+    unique_issues = list(dict.fromkeys(issues))
+    issues = unique_issues
+
     # Check transition strategy
     strategy = getattr(task_mgmt, 'transition_strategy', 'auto')
 
@@ -806,13 +812,26 @@ def _complete_issues_auto(issues: List[str], task_mgmt):
                         console.print(f"[green]  ✓ {issue_key}: {old_status} → {saved_status_for_all}[/green]")
                         continue
 
+            # Check if issue is already in a "done" status (skip transition)
+            done_keywords = ["done", "closed", "resolved", "complete", "tamamlandı", "kapatıldı", "tamamlan"]
+            old_status_lower = old_status.lower()
+            is_already_done = any(kw in old_status_lower for kw in done_keywords)
+
+            if is_already_done:
+                console.print(f"[dim]  - {issue_key}: Already in '{old_status}' (skipped)[/dim]")
+                continue
+
             # Use "after_push" status - will try all mapped statuses, then auto-advance
-            if task_mgmt.transition_issue(issue_key, "after_push"):
-                # Get new status after transition
-                issue = task_mgmt.get_issue(issue_key)
-                new_status = issue.status if issue else "Done"
+            transition_result = task_mgmt.transition_issue(issue_key, "after_push")
+
+            # Get new status after transition attempt
+            issue = task_mgmt.get_issue(issue_key)
+            new_status = issue.status if issue else old_status
+
+            if transition_result and new_status != old_status:
+                # Status actually changed
                 console.print(f"[green]  ✓ {issue_key}: {old_status} → {new_status}[/green]")
-            else:
+            elif new_status == old_status:
                 # Transition failed - ask user to select from available transitions
                 transitions = task_mgmt.get_available_transitions(issue_key)
 
