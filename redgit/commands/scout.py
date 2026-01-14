@@ -39,10 +39,22 @@ def _get_scout() -> Scout:
 @scout_app.command("analyze")
 def analyze_cmd(
     path: str = typer.Argument(".", help="Project path to analyze"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force re-analysis")
+    force: bool = typer.Option(False, "--force", "-f", help="Force re-analysis"),
+    detailed: bool = typer.Option(False, "--detailed", "-d", help="Include detailed contributor statistics from git history")
 ):
-    """Analyze project structure using AI."""
+    """Analyze project structure using AI.
+
+    With --detailed flag, also analyzes git history to show:
+    - Per-contributor statistics (commits, lines added/removed)
+    - Time spent (based on commit timestamps)
+    - Contribution percentage
+    """
     scout = _get_scout()
+
+    # If detailed mode, run contributor analysis
+    if detailed:
+        _run_detailed_analysis(path)
+        return
 
     # Check existing analysis
     existing = scout.get_analysis()
@@ -1073,3 +1085,416 @@ def _send_via_notification(result: dict, task_mgmt, notification, channel: str =
             console.print("[red]Failed to send notification.[/red]")
     except Exception as e:
         console.print(f"[red]Notification error: {e}[/red]")
+
+
+# ==================== Detailed Contributor Analysis ====================
+
+def _run_detailed_analysis(path: str = "."):
+    """Run detailed contributor analysis on current branch.
+
+    Analyzes git history from first to last commit on the current branch,
+    calculating per-contributor statistics including:
+    - Commits count
+    - Lines added/removed
+    - Net contribution (added - removed)
+    - Time spent (based on commit timestamps)
+    - Contribution percentage
+    """
+    from ..core.common.gitops import GitOps, NotAGitRepoError
+    from datetime import datetime
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    try:
+        gitops = GitOps()
+    except NotAGitRepoError:
+        console.print("[red]Not a git repository.[/red]")
+        raise typer.Exit(1)
+
+    current_branch = gitops.original_branch
+    console.print(f"\n[bold cyan]📊 Detailed Contributor Analysis[/bold cyan]")
+    console.print(f"[dim]Branch: {current_branch}[/dim]\n")
+
+    # Get branch info
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True
+    ) as progress:
+        task = progress.add_task("Analyzing git history...", total=None)
+
+        try:
+            stats = _collect_contributor_stats(gitops, current_branch)
+        except Exception as e:
+            console.print(f"[red]Analysis failed: {e}[/red]")
+            raise typer.Exit(1)
+
+    if not stats["contributors"]:
+        console.print("[yellow]No commits found on this branch.[/yellow]")
+        return
+
+    # Display results
+    _display_detailed_stats(stats, current_branch)
+
+    # Ask for output preference
+    console.print("\n[bold]📤 Export options:[/bold]")
+    console.print("  [cyan][1][/cyan] Keep in terminal (done)")
+    console.print("  [cyan][2][/cyan] Export to markdown file")
+    console.print("")
+
+    choice = Prompt.ask("Choice", default="1")
+
+    if choice == "2":
+        filepath = _export_detailed_stats_to_file(stats, current_branch)
+        console.print(f"\n[green]✓ Exported to:[/green] {filepath}")
+
+
+def _collect_contributor_stats(gitops, branch: str) -> dict:
+    """Collect contributor statistics from git history.
+
+    Returns:
+        dict with:
+        - branch: branch name
+        - first_commit: first commit date
+        - last_commit: last commit date
+        - total_commits: total commit count
+        - total_lines_added: total lines added
+        - total_lines_removed: total lines removed
+        - contributors: list of contributor stats
+    """
+    from datetime import datetime
+
+    repo = gitops.repo
+
+    # Get merge base with main/master to find branch start
+    base_branch = _get_base_branch(gitops)
+    merge_base = None
+
+    if base_branch and base_branch != branch:
+        try:
+            merge_base = repo.git.merge_base(base_branch, branch).strip()
+        except Exception:
+            pass
+
+    # Get commits on this branch
+    if merge_base:
+        # Commits since divergence from base branch
+        log_range = f"{merge_base}..HEAD"
+        commit_list = list(repo.iter_commits(log_range))
+    else:
+        # All commits on current branch
+        commit_list = list(repo.iter_commits(branch, max_count=500))
+
+    if not commit_list:
+        return {
+            "branch": branch,
+            "first_commit": None,
+            "last_commit": None,
+            "total_commits": 0,
+            "total_lines_added": 0,
+            "total_lines_removed": 0,
+            "contributors": []
+        }
+
+    # Aggregate stats by contributor
+    contributors = {}
+    total_added = 0
+    total_removed = 0
+
+    for commit in commit_list:
+        # Normalize author info (remove whitespace, newlines, etc.)
+        author_email = commit.author.email.strip().lower() if commit.author.email else "unknown"
+        author_name = commit.author.name.strip() if commit.author.name else "Unknown"
+        # Remove any newlines or special chars from name
+        author_name = " ".join(author_name.split())
+        commit_time = datetime.fromtimestamp(commit.committed_date)
+
+        # Initialize contributor if new
+        if author_email not in contributors:
+            contributors[author_email] = {
+                "name": author_name,
+                "email": author_email,
+                "commits": 0,
+                "lines_added": 0,
+                "lines_removed": 0,
+                "first_commit": commit_time,
+                "last_commit": commit_time,
+                "commit_times": []
+            }
+
+        contrib = contributors[author_email]
+        contrib["commits"] += 1
+        contrib["commit_times"].append(commit_time)
+
+        # Update first/last commit times
+        if commit_time < contrib["first_commit"]:
+            contrib["first_commit"] = commit_time
+        if commit_time > contrib["last_commit"]:
+            contrib["last_commit"] = commit_time
+
+        # Get stats for this commit
+        try:
+            stats = commit.stats.total
+            added = stats.get("insertions", 0)
+            removed = stats.get("deletions", 0)
+
+            contrib["lines_added"] += added
+            contrib["lines_removed"] += removed
+            total_added += added
+            total_removed += removed
+        except Exception:
+            pass
+
+    # Calculate time spent (estimated based on commit timestamps)
+    for email, contrib in contributors.items():
+        contrib["time_spent_hours"] = _estimate_time_spent(contrib["commit_times"])
+        # Calculate net contribution
+        contrib["net_lines"] = contrib["lines_added"] - contrib["lines_removed"]
+
+    # Convert to list and calculate percentages
+    total_net = sum(abs(c["net_lines"]) for c in contributors.values())
+    contributor_list = []
+
+    for contrib in contributors.values():
+        # Contribution percentage based on total line changes
+        if total_net > 0:
+            contrib["contribution_pct"] = (abs(contrib["net_lines"]) / total_net) * 100
+        else:
+            contrib["contribution_pct"] = 0
+
+        contributor_list.append(contrib)
+
+    # Sort by contribution percentage (descending)
+    contributor_list.sort(key=lambda x: x["contribution_pct"], reverse=True)
+
+    # Get first and last commit dates
+    all_times = [datetime.fromtimestamp(c.committed_date) for c in commit_list]
+    first_commit = min(all_times) if all_times else None
+    last_commit = max(all_times) if all_times else None
+
+    return {
+        "branch": branch,
+        "base_branch": base_branch,
+        "first_commit": first_commit,
+        "last_commit": last_commit,
+        "total_commits": len(commit_list),
+        "total_lines_added": total_added,
+        "total_lines_removed": total_removed,
+        "contributors": contributor_list
+    }
+
+
+def _get_base_branch(gitops) -> Optional[str]:
+    """Get the base branch (main/master/develop)."""
+    repo = gitops.repo
+
+    # Try common base branches
+    for base in ["main", "master", "develop", "dev"]:
+        try:
+            repo.git.rev_parse(f"refs/heads/{base}")
+            return base
+        except Exception:
+            continue
+
+    return None
+
+
+def _estimate_time_spent(commit_times: list) -> float:
+    """Estimate time spent based on commit timestamps.
+
+    Uses a heuristic:
+    - Time between commits (if < 4 hours) counts as work time
+    - First commit of a session gets 30 min base time
+    - Max 8 hours per day
+
+    Returns hours spent.
+    """
+    if not commit_times:
+        return 0
+
+    if len(commit_times) == 1:
+        return 0.5  # Single commit = 30 min minimum
+
+    # Sort times
+    sorted_times = sorted(commit_times)
+    total_hours = 0
+    session_start = sorted_times[0]
+
+    for i in range(1, len(sorted_times)):
+        diff = (sorted_times[i] - sorted_times[i-1]).total_seconds() / 3600  # hours
+
+        if diff < 4:  # Same session (less than 4 hours gap)
+            total_hours += diff
+        else:  # New session
+            total_hours += 0.5  # Add 30 min for previous session end work
+            session_start = sorted_times[i]
+
+    # Add 30 min for final session
+    total_hours += 0.5
+
+    return round(total_hours, 1)
+
+
+def _display_detailed_stats(stats: dict, branch: str):
+    """Display detailed contributor statistics in rich format."""
+    from rich.panel import Panel
+
+    # Branch info panel
+    first = stats["first_commit"].strftime("%Y-%m-%d %H:%M") if stats["first_commit"] else "-"
+    last = stats["last_commit"].strftime("%Y-%m-%d %H:%M") if stats["last_commit"] else "-"
+
+    # Calculate duration
+    if stats["first_commit"] and stats["last_commit"]:
+        duration = stats["last_commit"] - stats["first_commit"]
+        days = duration.days
+        duration_str = f"{days} gün" if days > 0 else "< 1 gün"
+    else:
+        duration_str = "-"
+
+    info_text = (
+        f"[bold]Branch:[/bold] {branch}\n"
+        f"[bold]Base:[/bold] {stats.get('base_branch', '-')}\n"
+        f"[bold]Period:[/bold] {first} → {last} ({duration_str})\n"
+        f"[bold]Total Commits:[/bold] {stats['total_commits']}\n"
+        f"[bold]Total Lines:[/bold] [green]+{stats['total_lines_added']:,}[/green] / [red]-{stats['total_lines_removed']:,}[/red]"
+    )
+    console.print(Panel(info_text, title="📈 Branch Statistics"))
+
+    # Contributors table
+    console.print(f"\n[bold cyan]👥 Contributors ({len(stats['contributors'])})[/bold cyan]\n")
+
+    table = Table(show_header=True, header_style="bold", expand=True)
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("Contributor", style="cyan")
+    table.add_column("Commits", justify="right")
+    table.add_column("Added", justify="right", style="green")
+    table.add_column("Removed", justify="right", style="red")
+    table.add_column("Net", justify="right")
+    table.add_column("Time", justify="right")
+    table.add_column("Contribution", justify="left")
+
+    for i, contrib in enumerate(stats["contributors"], 1):
+        name = contrib["name"]
+        if len(name) > 22:
+            name = name[:20] + ".."
+
+        net = contrib["net_lines"]
+        net_str = f"+{net}" if net >= 0 else str(net)
+        net_style = "green" if net >= 0 else "red"
+
+        # Contribution bar
+        pct = contrib["contribution_pct"]
+        bar_len = int(pct / 10)
+        bar = "█" * bar_len + "░" * (10 - bar_len)
+
+        # Time spent
+        hours = contrib["time_spent_hours"]
+        if hours >= 8:
+            time_str = f"{hours/8:.1f}d"
+        else:
+            time_str = f"{hours:.1f}h"
+
+        table.add_row(
+            str(i),
+            name,
+            str(contrib["commits"]),
+            f"+{contrib['lines_added']:,}",
+            f"-{contrib['lines_removed']:,}",
+            f"[{net_style}]{net_str}[/{net_style}]",
+            time_str,
+            f"{bar} {pct:.1f}%"
+        )
+
+    console.print(table)
+
+    # Summary
+    total_hours = sum(c["time_spent_hours"] for c in stats["contributors"])
+    console.print(f"\n[dim]Total estimated time: {total_hours:.1f} hours (~{total_hours/8:.1f} working days)[/dim]")
+
+
+def _export_detailed_stats_to_file(stats: dict, branch: str) -> str:
+    """Export detailed stats to markdown file."""
+    from datetime import datetime
+
+    lines = [
+        "# 📊 Detailed Contributor Analysis",
+        "",
+        f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "---",
+        "",
+        "## 📈 Branch Statistics",
+        "",
+        f"| Metric | Value |",
+        f"|--------|-------|",
+        f"| Branch | `{branch}` |",
+        f"| Base Branch | `{stats.get('base_branch', '-')}` |",
+    ]
+
+    if stats["first_commit"]:
+        lines.append(f"| First Commit | {stats['first_commit'].strftime('%Y-%m-%d %H:%M')} |")
+    if stats["last_commit"]:
+        lines.append(f"| Last Commit | {stats['last_commit'].strftime('%Y-%m-%d %H:%M')} |")
+
+    # Calculate duration
+    if stats["first_commit"] and stats["last_commit"]:
+        duration = stats["last_commit"] - stats["first_commit"]
+        lines.append(f"| Duration | {duration.days} days |")
+
+    lines.extend([
+        f"| Total Commits | {stats['total_commits']} |",
+        f"| Lines Added | +{stats['total_lines_added']:,} |",
+        f"| Lines Removed | -{stats['total_lines_removed']:,} |",
+        "",
+        "---",
+        "",
+        "## 👥 Contributors",
+        "",
+        "| # | Contributor | Commits | Added | Removed | Net | Time | Contribution |",
+        "|---|-------------|---------|-------|---------|-----|------|--------------|",
+    ])
+
+    for i, contrib in enumerate(stats["contributors"], 1):
+        net = contrib["net_lines"]
+        net_str = f"+{net}" if net >= 0 else str(net)
+
+        hours = contrib["time_spent_hours"]
+        time_str = f"{hours/8:.1f}d" if hours >= 8 else f"{hours:.1f}h"
+
+        pct = contrib["contribution_pct"]
+        bar_len = int(pct / 10)
+        bar = "█" * bar_len + "░" * (10 - bar_len)
+
+        lines.append(
+            f"| {i} | {contrib['name']} | {contrib['commits']} | "
+            f"+{contrib['lines_added']:,} | -{contrib['lines_removed']:,} | "
+            f"{net_str} | {time_str} | {bar} {pct:.1f}% |"
+        )
+
+    # Summary
+    total_hours = sum(c["time_spent_hours"] for c in stats["contributors"])
+    lines.extend([
+        "",
+        "---",
+        "",
+        "## 📋 Summary",
+        "",
+        f"- **Total Contributors:** {len(stats['contributors'])}",
+        f"- **Total Commits:** {stats['total_commits']}",
+        f"- **Total Lines Changed:** {stats['total_lines_added'] + stats['total_lines_removed']:,}",
+        f"- **Estimated Time:** {total_hours:.1f} hours (~{total_hours/8:.1f} working days)",
+        "",
+        "---",
+        "",
+        "*Generated by RedGit Scout*",
+    ])
+
+    # Write to file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"contributor-analysis-{branch.replace('/', '-')}-{timestamp}.md"
+    filepath = f"/tmp/{filename}"
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    return filepath
