@@ -163,5 +163,14 @@ def main():
 
     app()
 
+    # Show upgrade suggestion after command output
+    try:
+        from redgit.utils.version_check import check_for_updates
+        update_msg = check_for_updates()
+        if update_msg:
+            rprint(update_msg)
+    except Exception:
+        pass
+
 if __name__ == "__main__":
     main()
