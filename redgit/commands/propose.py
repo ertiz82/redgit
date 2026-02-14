@@ -36,8 +36,8 @@ from ..core.propose.analysis import (
     build_detailed_analysis_prompt,
     parse_detailed_result,
 )
-from ..integrations.registry import get_task_management, get_code_hosting, get_notification
-from ..integrations.base import TaskManagementBase, Issue
+from ..integrations.registry import get_task_management, get_code_hosting, get_notification, get_error_tracking
+from ..integrations.base import TaskManagementBase, Issue, ErrorTrackingBase, ErrorMatchResult
 from ..plugins.registry import load_plugins, get_active_plugin
 from ..utils.security import filter_changes
 from ..utils.logging import get_logger
@@ -446,6 +446,16 @@ def propose_cmd(
     if not no_task:
         task_mgmt = get_task_management(config)
 
+    # Get error tracking integration if available
+    error_tracker: Optional[ErrorTrackingBase] = get_error_tracking(config)
+
+    # Verbose: Show error tracking config
+    if verbose and error_tracker:
+        console.print(f"\n[bold cyan]═══ Error Tracking Config ═══[/bold cyan]")
+        console.print(f"[dim]Integration: {error_tracker.name}[/dim]")
+        console.print(f"[dim]Environment: {error_tracker.default_environment}[/dim]")
+        console.print(f"[dim]Auto-resolve: {error_tracker.auto_resolve}[/dim]")
+
     # Verbose: Show task management config
     if verbose and task_mgmt:
         console.print(f"\n[bold cyan]═══ Task Management Config ═══[/bold cyan]")
@@ -475,6 +485,23 @@ def propose_cmd(
         console.print(f"[dim]Backup: {backup_id}[/dim]")
     except Exception as backup_error:
         console.print(f"[yellow]Warning: Could not create backup: {backup_error}[/yellow]")
+
+    # Match changed files to errors if error tracking is enabled
+    matched_errors: List[ErrorMatchResult] = []
+    if error_tracker and error_tracker.enabled:
+        with console.status("Matching files to errors..."):
+            file_paths = [c.get("path", "") for c in changes if c.get("path")]
+            matched_errors = error_tracker.get_errors_for_files(file_paths)
+
+        if matched_errors:
+            console.print(f"\n[bold red]🐛 Error Tracking[/bold red]")
+            console.print(f"[red]   Found {len(matched_errors)} potential error fix{'es' if len(matched_errors) > 1 else ''}:[/red]")
+            for match in matched_errors[:5]:
+                confidence_pct = int(match.confidence * 100)
+                console.print(f"   [dim]• {match.error.short_id or match.error.id[:8]}: {match.error.title[:50]}... ({confidence_pct}% match)[/dim]")
+            if len(matched_errors) > 5:
+                console.print(f"   [dim]   ... and {len(matched_errors) - 5} more[/dim]")
+            console.print("")
 
     # Handle --ask interactive mode first
     subtask_mode = subtasks  # Default from CLI flag
@@ -702,7 +729,9 @@ def propose_cmd(
                 console.print("\n[bold cyan]Processing matched groups...[/bold cyan]")
                 _process_matched_groups(
                     matched_groups, gitops, task_mgmt, state_manager, workflow,
-                    single_branch=single_branch
+                    single_branch=single_branch,
+                    error_tracker=error_tracker,
+                    matched_errors=matched_errors
                 )
 
             # Process unmatched groups
@@ -711,7 +740,9 @@ def propose_cmd(
                 _process_unmatched_groups(
                     unmatched_groups, gitops, task_mgmt, state_manager, workflow, config, llm,
                     parent_key=None,  # No hierarchical branching in standard mode
-                    single_branch=single_branch
+                    single_branch=single_branch,
+                    error_tracker=error_tracker,
+                    matched_errors=matched_errors
                 )
 
         # Finalize session and track usage
@@ -810,12 +841,16 @@ def _process_matched_groups(
     task_mgmt: TaskManagementBase,
     state_manager: StateManager,
     workflow: dict,
-    single_branch: bool = False
+    single_branch: bool = False,
+    error_tracker: Optional[ErrorTrackingBase] = None,
+    matched_errors: Optional[List[ErrorMatchResult]] = None
 ):
     """Process groups that matched with existing issues.
 
     Args:
         single_branch: If True, commit directly to current branch (no separate branches)
+        error_tracker: Error tracking integration (optional)
+        matched_errors: List of matched errors from file analysis (optional)
     """
 
     auto_transition = workflow.get("auto_transition", True)
@@ -831,11 +866,27 @@ def _process_matched_groups(
         branch_name = task_mgmt.format_branch_name(issue_key, group.get("commit_title", ""))
         group["branch"] = branch_name
 
-        # Build commit message with issue reference
+        # Find errors matching this group's files
+        group_files = set(group.get("files", []))
+        group_error_refs = []
+        group_matched_errors = []
+        if error_tracker and matched_errors:
+            for match in matched_errors:
+                if any(f in group_files for f in match.matched_files):
+                    error_ref = error_tracker.format_error_ref(match.error)
+                    group_error_refs.append(error_ref)
+                    group_matched_errors.append(match)
+                    console.print(f"   [red]🐛 {error_ref}[/red]")
+
+        # Store matched errors in group for later use
+        group["matched_errors"] = group_matched_errors
+
+        # Build commit message with issue reference and error refs
         msg = build_commit_message(
             title=group['commit_title'],
             body=group.get('commit_body', ''),
-            issue_ref=issue_key
+            issue_ref=issue_key,
+            error_refs=group_error_refs if group_error_refs else None
         )
 
         # Create branch and commit using new method
@@ -846,11 +897,15 @@ def _process_matched_groups(
                 # Single branch mode: commit directly to current branch
                 staged_files, failed_files = gitops.stage_files(files)
                 if staged_files:
-                    gitops.commit(msg)
+                    commit_sha = gitops.commit(msg)
                     console.print(f"[green]   ✓ Committed: {group['commit_title'][:50]}[/green]")
 
                     # Add comment to issue
                     task_mgmt.on_commit(group, {"issue_key": issue_key})
+
+                    # Link commit to errors and optionally resolve them
+                    if error_tracker and group_matched_errors:
+                        error_tracker.on_commit(group, {"commit_sha": commit_sha, "issue_key": issue_key})
 
                     # Transition to In Progress if configured
                     if auto_transition and issue and issue.status.lower() not in ["in progress", "in development"]:
@@ -869,6 +924,12 @@ def _process_matched_groups(
 
                     # Add comment to issue
                     task_mgmt.on_commit(group, {"issue_key": issue_key})
+
+                    # Link commit to errors and optionally resolve them
+                    if error_tracker and group_matched_errors:
+                        # Get commit SHA from git
+                        commit_sha = gitops.get_current_commit_sha()
+                        error_tracker.on_commit(group, {"commit_sha": commit_sha, "issue_key": issue_key})
 
                     # Transition to In Progress if configured
                     if auto_transition and issue.status.lower() not in ["in progress", "in development"]:
@@ -892,13 +953,17 @@ def _process_unmatched_groups(
     config: dict,
     llm: LLMClient = None,
     parent_key: Optional[str] = None,
-    single_branch: bool = False
+    single_branch: bool = False,
+    error_tracker: Optional[ErrorTrackingBase] = None,
+    matched_errors: Optional[List[ErrorMatchResult]] = None
 ):
     """Process groups that didn't match any existing issue.
 
     Args:
         parent_key: If provided, create subtasks under this parent issue (--subtasks mode)
         single_branch: If True, commit directly to current branch (no separate branches)
+        error_tracker: Error tracking integration (optional)
+        matched_errors: List of matched errors from file analysis (optional)
     """
 
     create_policy = workflow.get("create_missing_issues", "ask")
@@ -911,6 +976,21 @@ def _process_unmatched_groups(
         # Show issue_title (localized) if available, fallback to commit_title
         display_title = group.get("issue_title") or group.get("commit_title", "Untitled")
         console.print(f"\n[yellow]({i}/{len(groups)}) {display_title[:50]}...[/yellow]")
+
+        # Find errors matching this group's files
+        group_files = set(group.get("files", []))
+        group_error_refs = []
+        group_matched_errors = []
+        if error_tracker and matched_errors:
+            for match in matched_errors:
+                if any(f in group_files for f in match.matched_files):
+                    error_ref = error_tracker.format_error_ref(match.error)
+                    group_error_refs.append(error_ref)
+                    group_matched_errors.append(match)
+                    console.print(f"   [red]🐛 {error_ref}[/red]")
+
+        # Store matched errors in group for later use
+        group["matched_errors"] = group_matched_errors
 
         issue_key = None
 
@@ -1013,11 +1093,12 @@ def _process_unmatched_groups(
         group["branch"] = branch_name
         group["issue_key"] = issue_key
 
-        # Build commit message
+        # Build commit message with error refs
         msg = build_commit_message(
             title=group['commit_title'],
             body=group.get('commit_body', ''),
-            issue_ref=issue_key if issue_key else None
+            issue_ref=issue_key if issue_key else None,
+            error_refs=group_error_refs if group_error_refs else None
         )
 
         # Create branch and commit using new method
@@ -1028,12 +1109,16 @@ def _process_unmatched_groups(
                 # Single branch mode: commit directly to current branch
                 staged_files, failed_files = gitops.stage_files(files)
                 if staged_files:
-                    gitops.commit(msg)
+                    commit_sha = gitops.commit(msg)
                     console.print(f"[green]   ✓ Committed: {group['commit_title'][:50]}[/green]")
 
                     # Add comment if issue was created
                     if issue_key and task_mgmt:
                         task_mgmt.on_commit(group, {"issue_key": issue_key})
+
+                    # Link commit to errors and optionally resolve them
+                    if error_tracker and group_matched_errors:
+                        error_tracker.on_commit(group, {"commit_sha": commit_sha, "issue_key": issue_key})
                 else:
                     console.print(f"[yellow]   ⚠️  No files to commit[/yellow]")
             else:
@@ -1049,6 +1134,11 @@ def _process_unmatched_groups(
                     # Add comment if issue was created
                     if issue_key and task_mgmt:
                         task_mgmt.on_commit(group, {"issue_key": issue_key})
+
+                    # Link commit to errors and optionally resolve them
+                    if error_tracker and group_matched_errors:
+                        commit_sha = gitops.get_current_commit_sha()
+                        error_tracker.on_commit(group, {"commit_sha": commit_sha, "issue_key": issue_key})
 
                     # Save to session
                     state_manager.add_session_branch(branch_name, issue_key)
@@ -2599,27 +2689,21 @@ def _process_task_filtered_mode(
     force: bool = False
 ) -> None:
     """
-    Process task-filtered mode: analyze files for relevance to parent task.
+    Process task-filtered mode: commit all files to the specified task.
 
-    This mode:
-    1. Fetches parent task details
-    2. Uses LLM to analyze which files relate to the parent task (unless force=True)
-    3. Creates subtasks only for related files
-    4. Matches unrelated files to user's other open tasks
-    5. Reports truly unmatched files
-    6. Asks to push parent branch
-    7. ALWAYS returns to original branch at the end
+    When user specifies -t ID, ALL files are committed to that task.
+    No AI analysis is done to split files across different tasks.
 
     Args:
-        task_id: Parent task ID (e.g., "123" or "PROJ-123")
+        task_id: Task ID (e.g., "123" or "PROJ-123")
         changes: List of file changes
         gitops: GitOps instance
         task_mgmt: Task management integration
         state_manager: State manager
         config: Configuration dict
         verbose: Enable verbose output
-        detailed: Enable detailed mode
-        force: Skip LLM relevance check, commit all files to parent task
+        detailed: Enable detailed mode (uses AI to generate better commit messages)
+        force: Not used (kept for compatibility)
     """
     # Save original branch to return to at the end
     original_branch = gitops.original_branch
@@ -2637,231 +2721,126 @@ def _process_task_filtered_mode(
             parent_task_key = task_id
 
         # Fetch parent task
-        console.print(f"\n[cyan]Fetching parent task {parent_task_key}...[/cyan]")
+        console.print(f"\n[cyan]Fetching task {parent_task_key}...[/cyan]")
         parent_issue = task_mgmt.get_issue(parent_task_key)
 
         if not parent_issue:
-            console.print(f"[red]❌ Parent task {parent_task_key} not found[/red]")
+            console.print(f"[red]❌ Task {parent_task_key} not found[/red]")
             raise typer.Exit(1)
 
-        console.print(f"[green]✓ Parent task: {parent_task_key} - {parent_issue.summary}[/green]")
-        if parent_issue.description:
-            desc_preview = parent_issue.description[:200] + "..." if len(parent_issue.description) > 200 else parent_issue.description
-            console.print(f"[dim]   {desc_preview}[/dim]")
-
-        # Fetch user's other active tasks
-        console.print("\n[cyan]Fetching other active tasks...[/cyan]")
-        all_active_issues = task_mgmt.get_my_active_issues()
-        other_tasks = [i for i in all_active_issues if i.key != parent_task_key]
-        console.print(f"[dim]   Found {len(other_tasks)} other active tasks[/dim]")
-
-        # Get issue language if configured
-        issue_language = getattr(task_mgmt, 'issue_language', None)
-
-        # Use LLM to analyze and group files
-        console.print("\n[yellow]Analyzing file relevance to parent task...[/yellow]")
-        llm = LLMClient(config.get("llm", {}))
-        prompt_manager = PromptManager(config.get("llm", {}))
-
-        prompt = prompt_manager.get_task_filtered_prompt(
-            changes=changes,
-            parent_task=parent_issue,
-            other_tasks=other_tasks,
-            issue_language=issue_language
-        )
-
-        if verbose:
-            console.print(f"\n[bold cyan]=== Task-Filtered Prompt ===[/bold cyan]")
-            console.print(Panel(prompt[:3000] + ("..." if len(prompt) > 3000 else ""), title="Prompt", border_style="cyan"))
-
-        # Generate task-filtered groups
-        result = llm.generate_task_filtered_groups(prompt)
-
-        if verbose:
-            console.print(f"\n[bold cyan]=== LLM Response ===[/bold cyan]")
-            console.print(f"Related groups: {len(result['related_groups'])}")
-            console.print(f"Other task matches: {len(result['other_task_matches'])}")
-            console.print(f"Unmatched files: {len(result['unmatched_files'])}")
-
-        # Force mode: move all groups to related_groups (skip task relevance filtering)
-        if force:
-            console.print("\n[yellow]Force mode: Tüm dosyalar parent task ile ilişkili kabul ediliyor[/yellow]")
-
-            # Move other_task_matches to related_groups
-            for match in result.get('other_task_matches', []):
-                result['related_groups'].append({
-                    'files': match.get('files', []),
-                    'commit_title': match.get('commit_title', 'Changes'),
-                    'commit_body': match.get('commit_body', ''),
-                    'issue_title': match.get('issue_title', match.get('commit_title', 'Changes')),
-                    'issue_description': match.get('issue_description', ''),
-                    'relevance_reason': f"Force mode - originally matched {match.get('issue_key', 'other task')}"
-                })
-
-            # Move unmatched_files to a new related_group
-            if result.get('unmatched_files'):
-                result['related_groups'].append({
-                    'files': result['unmatched_files'],
-                    'commit_title': 'chore: miscellaneous changes',
-                    'commit_body': '',
-                    'issue_title': 'Diğer değişiklikler',
-                    'issue_description': 'Force mode ile eklenen dosyalar',
-                    'relevance_reason': 'Force mode - originally unmatched files'
-                })
-
-            # Clear other categories
-            result['other_task_matches'] = []
-            result['unmatched_files'] = []
-
-            console.print(f"\n[bold]Force Mode:[/bold]")
-            total_files = sum(len(g.get('files', [])) for g in result['related_groups'])
-            console.print(f"  [green]✓ {total_files} dosya {len(result['related_groups'])} subtask olarak {parent_task_key} altına commit edilecek[/green]")
-        else:
-            # Normal mode: show summary with filtering
-            console.print("\n[bold]Analysis Results:[/bold]")
-            console.print(f"  [green]✓ {len(result['related_groups'])} subtask(s) for {parent_task_key}[/green]")
-            if result['other_task_matches']:
-                console.print(f"  [blue]→ {len(result['other_task_matches'])} group(s) match other tasks[/blue]")
-            if result['unmatched_files']:
-                console.print(f"  [yellow]○ {len(result['unmatched_files'])} file(s) unmatched[/yellow]")
+        console.print(f"[green]✓ Task: {parent_task_key} - {parent_issue.summary}[/green]")
 
         # Get workflow config
         workflow = config.get("workflow", {})
         strategy = workflow.get("strategy", "local-merge")
 
-        # Determine parent branch
+        # Determine branch name
         parent_branch = task_mgmt.format_branch_name(parent_task_key, parent_issue.summary)
 
-        # Check if we're already on the parent branch (or a matching task branch)
-        is_already_on_parent = (
+        # Check if we're already on the task branch
+        is_already_on_task = (
             original_branch == parent_branch or
             parent_task_key.lower() in original_branch.lower()
         )
 
-        if is_already_on_parent:
-            console.print(f"\n[dim]Zaten parent task branch'indesiniz: {original_branch}[/dim]")
-            # Use original branch as parent branch since we're already there
-            parent_branch = original_branch
-        else:
-            # Setup parent branch (create or checkout)
-            console.print(f"\n[bold cyan]Setting up parent branch: {parent_branch}[/bold cyan]")
+        # Get all files
+        all_files = [c['file'] for c in changes]
+        console.print(f"\n[bold]{len(all_files)} dosya {parent_task_key} task'ına commit edilecek[/bold]")
 
-            # Check if parent branch exists on remote or locally
-            if gitops.remote_branch_exists(parent_branch):
-                console.print(f"[dim]Parent branch exists on remote, checking out and pulling...[/dim]")
-                success, is_new, error = gitops.checkout_or_create_branch(
-                    parent_branch,
-                    from_branch=original_branch,
-                    pull_if_exists=True
-                )
-                if not success:
-                    console.print(f"[red]❌ Failed to checkout parent branch: {error}[/red]")
-                    raise typer.Exit(1)
-                console.print(f"[green]✓ Checked out existing branch: {parent_branch}[/green]")
-            else:
-                # Check if exists locally
-                local_branches = [b.name for b in gitops.repo.branches]
-                if parent_branch in local_branches:
-                    console.print(f"[dim]Parent branch exists locally, checking out...[/dim]")
-                    success, is_new, error = gitops.checkout_or_create_branch(
-                        parent_branch,
-                        from_branch=original_branch,
-                        pull_if_exists=False
-                    )
-                    if not success:
-                        console.print(f"[red]❌ Failed to checkout parent branch: {error}[/red]")
-                        raise typer.Exit(1)
-                    console.print(f"[green]✓ Checked out existing local branch: {parent_branch}[/green]")
+        if verbose:
+            for f in all_files:
+                console.print(f"  [dim]• {f}[/dim]")
+
+        # Generate commit message using AI if detailed mode, otherwise simple message
+        if detailed:
+            console.print("\n[yellow]AI ile commit mesajı oluşturuluyor...[/yellow]")
+            llm = LLMClient(config.get("llm", {}))
+            prompt_manager = PromptManager(config.get("llm", {}))
+
+            # Simple prompt for commit message
+            prompt = f"""Generate a conventional commit message for these changes to task {parent_task_key} ({parent_issue.summary}):
+
+Files:
+{chr(10).join(f'- {f}' for f in all_files)}
+
+Return JSON: {{"commit_title": "type(scope): description", "commit_body": "details"}}"""
+
+            try:
+                result = llm.generate_groups(prompt)
+                if result and len(result) > 0:
+                    commit_title = result[0].get('commit_title', f'feat({parent_task_key}): changes')
+                    commit_body = result[0].get('commit_body', '')
                 else:
-                    # Create new parent branch from original
-                    success, is_new, error = gitops.checkout_or_create_branch(
-                        parent_branch,
-                        from_branch=original_branch,
-                        pull_if_exists=False
-                    )
-                    if not success:
-                        console.print(f"[red]❌ Failed to create parent branch: {error}[/red]")
-                        raise typer.Exit(1)
-                    console.print(f"[green]✓ Created new branch: {parent_branch}[/green]")
+                    commit_title = f'feat({parent_task_key}): changes'
+                    commit_body = ''
+            except Exception:
+                commit_title = f'feat({parent_task_key}): changes'
+                commit_body = ''
+        else:
+            # Simple commit message without AI
+            commit_title = f'feat({parent_task_key}): changes'
+            commit_body = '\n'.join(f'- {f}' for f in all_files[:10])
+            if len(all_files) > 10:
+                commit_body += f'\n... and {len(all_files) - 10} more files'
 
-        # 2. Process related groups as subtasks (from parent branch)
-        if result['related_groups']:
-            console.print(f"\n[bold cyan]Creating subtasks under {parent_task_key}...[/bold cyan]")
-            _process_related_groups_as_subtasks(
-                groups=result['related_groups'],
-                parent_task_key=parent_task_key,
-                parent_issue=parent_issue,
-                parent_branch=parent_branch,
-                gitops=gitops,
-                task_mgmt=task_mgmt,
-                state_manager=state_manager,
-                config=config,
+        # Build full commit message
+        commit_msg = build_commit_message(
+            title=commit_title,
+            body=commit_body,
+            issue_ref=parent_task_key
+        )
+
+        console.print(f"\n[bold]Commit:[/bold] {commit_title}")
+
+        # Confirm
+        if not Confirm.ask("\nProceed with commit?", default=True):
+            console.print("[yellow]Cancelled.[/yellow]")
+            return
+
+        # Create/switch to branch and commit
+        if is_already_on_task:
+            console.print(f"\n[cyan]Zaten task branch'indesiniz: {original_branch}[/cyan]")
+            # Just stage and commit
+            gitops.stage_files(all_files)
+            gitops.commit(commit_msg)
+            console.print(f"[green]✓ Committed to {original_branch}[/green]")
+            state_manager.add_session_branch(original_branch, parent_task_key)
+        else:
+            # Create branch and commit
+            console.print(f"\n[cyan]Branch oluşturuluyor: {parent_branch}[/cyan]")
+            success = gitops.create_branch_and_commit(
+                branch_name=parent_branch,
+                files=all_files,
+                message=commit_msg,
                 strategy=strategy
             )
+            if success:
+                if strategy == "local-merge":
+                    console.print(f"[green]✓ Committed and merged to {original_branch}[/green]")
+                else:
+                    console.print(f"[green]✓ Committed to {parent_branch}[/green]")
+                state_manager.add_session_branch(parent_branch, parent_task_key)
+            else:
+                console.print("[red]❌ Commit failed[/red]")
+                return
 
-        # 3. Process other task matches
-        if result['other_task_matches']:
-            console.print(f"\n[bold blue]Processing matches with other tasks...[/bold blue]")
-            _process_other_task_matches(
-                matches=result['other_task_matches'],
-                gitops=gitops,
-                task_mgmt=task_mgmt,
-                state_manager=state_manager,
-                config=config,
-                strategy=strategy
-            )
+        # Ask about pushing
+        if Confirm.ask(f"\nPush {parent_branch}?", default=False):
+            try:
+                gitops.push(parent_branch)
+                console.print(f"[green]✓ Pushed {parent_branch}[/green]")
+            except Exception as e:
+                console.print(f"[red]❌ Push failed: {e}[/red]")
 
-        # 4. Handle unmatched files
-        if result['unmatched_files']:
-            console.print(f"\n[bold yellow]Handling unmatched files...[/bold yellow]")
-            excluded_files = _handle_unmatched_files(
-                files=result['unmatched_files'],
-                gitops=gitops,
-                task_mgmt=task_mgmt,
-                state_manager=state_manager,
-                config=config,
-                strategy=strategy,
-                filtered_tasks=filtered_tasks  # Proje ile eşleşen tasklar
-            )
-            if excluded_files:
-                console.print(f"\n[yellow]⚠️  {len(excluded_files)} dosya commitlenmedi[/yellow]")
+        console.print(f"\n[green]✓ Tamamlandı![/green]")
+        return  # Early return - simplified flow
 
-        # 5. Ask about pushing parent branch (only if subtasks were created)
-        if result['related_groups']:
-            _ask_and_push_parent_branch(
-                parent_branch=parent_branch,
-                parent_task_key=parent_task_key,
-                gitops=gitops,
-                task_mgmt=task_mgmt,
-                config=config,
-                strategy=strategy
-            )
-
-            # Track branch in session
-            state_manager.add_session_branch(parent_branch, parent_task_key)
-
-        # Show session summary
-        session = state_manager.get_session()
-        branches = session.get("branches", [])
-        subtask_issues = session.get("subtask_issues", [])
-
-        console.print(f"\n[bold green]✅ Session complete[/bold green]")
-        if subtask_issues:
-            console.print(f"[dim]   {len(subtask_issues)} subtask(s) created under {parent_task_key}[/dim]")
-        if branches:
-            console.print(f"[dim]   {len(branches)} branch(es) ready[/dim]")
-
-    finally:
-        # ALWAYS return to original branch
-        try:
-            current_branch = gitops.repo.active_branch.name
-            if current_branch != original_branch:
-                console.print(f"\n[cyan]Orijinal branch'e dönülüyor: {original_branch}[/cyan]")
-                gitops.checkout(original_branch)
-                console.print(f"[green]✓ {original_branch} branch'ine dönüldü[/green]")
-        except Exception as e:
-            console.print(f"[yellow]⚠ Orijinal branch'e dönülemedi: {e}[/yellow]")
-            console.print(f"[dim]Manuel olarak dönmek için: git checkout {original_branch}[/dim]")
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"\n[bold red]═══ HATA OLUŞTU ═══[/bold red]")
+        console.print(f"\n[red]Hata: {e}[/red]")
+        raise
 
 
 def _process_related_groups_as_subtasks(

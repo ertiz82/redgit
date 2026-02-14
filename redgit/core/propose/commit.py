@@ -25,7 +25,8 @@ class CommitResult:
 def build_commit_message(
     title: str,
     body: str = "",
-    issue_ref: Optional[str] = None
+    issue_ref: Optional[str] = None,
+    error_refs: Optional[List[str]] = None
 ) -> str:
     """
     Build commit message with RedGit signature.
@@ -34,6 +35,7 @@ def build_commit_message(
         title: Commit title (first line)
         body: Commit body (details)
         issue_ref: Issue reference (e.g., "PROJ-123")
+        error_refs: List of error references (e.g., ["Fixes: SENTRY-abc123"])
 
     Returns:
         Complete commit message with RedGit signature
@@ -43,6 +45,8 @@ def build_commit_message(
         msg += f"\n\n{body}"
     if issue_ref:
         msg += f"\n\nRefs: {issue_ref}"
+    if error_refs:
+        msg += "\n\n" + "\n".join(error_refs)
     msg += REDGIT_SIGNATURE
     return msg
 
@@ -115,7 +119,8 @@ def execute_commit_group(
 
 def build_commit_from_group(
     group: dict,
-    issue_key: Optional[str] = None
+    issue_key: Optional[str] = None,
+    error_refs: Optional[List[str]] = None
 ) -> str:
     """
     Build commit message from a group dictionary.
@@ -126,6 +131,7 @@ def build_commit_from_group(
     Args:
         group: Group dictionary with commit_title and commit_body
         issue_key: Issue reference to include
+        error_refs: List of error references (e.g., ["Fixes: SENTRY-abc123"])
 
     Returns:
         Complete commit message
@@ -133,7 +139,8 @@ def build_commit_from_group(
     return build_commit_message(
         title=group.get('commit_title', 'Changes'),
         body=group.get('commit_body', ''),
-        issue_ref=issue_key
+        issue_ref=issue_key,
+        error_refs=error_refs
     )
 
 
