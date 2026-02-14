@@ -28,7 +28,8 @@ from .base import (
     AnalysisBase,
     CICDBase,
     CodeQualityBase,
-    TunnelBase
+    TunnelBase,
+    ErrorTrackingBase
 )
 
 from ..core.common.config import GLOBAL_INTEGRATIONS_DIR
@@ -189,7 +190,8 @@ def _is_valid_integration_class(cls) -> bool:
         cls is not AnalysisBase and
         cls is not CICDBase and
         cls is not CodeQualityBase and
-        cls is not TunnelBase
+        cls is not TunnelBase and
+        cls is not ErrorTrackingBase
     )
 
 
@@ -582,6 +584,52 @@ def get_tunnel_integration(config: dict, active_name: Optional[str] = None) -> O
     integration = load_integration_by_name(active_name, integration_config)
 
     if integration and isinstance(integration, TunnelBase):
+        return integration
+
+    return None
+
+
+def get_error_tracking(config: dict, active_name: Optional[str] = None) -> Optional[ErrorTrackingBase]:
+    """
+    Get the active error tracking integration.
+
+    Args:
+        config: Full config dict
+        active_name: Override active integration name
+
+    Returns:
+        ErrorTrackingBase instance or None
+
+    Example:
+        from redgit.integrations.registry import get_error_tracking
+        from redgit.core.config import ConfigManager
+
+        config = ConfigManager().load()
+        error_tracker = get_error_tracking(config)
+
+        if error_tracker:
+            # Get recent errors
+            errors = error_tracker.get_recent_errors(limit=10, status="unresolved")
+
+            # Find errors related to changed files
+            matches = error_tracker.get_errors_for_files(["src/auth.py", "src/login.py"])
+
+            # Link a commit to an error
+            error_tracker.link_commit_to_error("abc123", "commit_sha_here")
+
+            # Resolve an error
+            error_tracker.resolve_error("abc123", status="resolved")
+    """
+    if not active_name:
+        active_name = config.get("active", {}).get("error_tracking")
+
+    if not active_name:
+        return None
+
+    integration_config = config.get("integrations", {}).get(active_name, {})
+    integration = load_integration_by_name(active_name, integration_config)
+
+    if integration and isinstance(integration, ErrorTrackingBase):
         return integration
 
     return None
