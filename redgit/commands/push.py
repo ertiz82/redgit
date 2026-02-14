@@ -148,6 +148,135 @@ def _match_user(query: str, users: List[Dict[str, str]]) -> Optional[Dict[str, s
     return None
 
 
+def _prompt_reviewers(
+    users: List[Dict[str, str]],
+    current_user: Dict[str, str],
+    code_owner_email: Optional[str] = None
+) -> List[Dict[str, str]]:
+    """
+    Prompt user to select reviewers with smart defaults.
+
+    Logic:
+    - If code_owner exists and pusher != code_owner: auto-add code_owner, ask for 1 more
+    - If pusher == code_owner: ask for 2 reviewers
+    - If skipped, select random from remaining users
+
+    Args:
+        users: List of git contributors
+        current_user: Current git user (pusher)
+        code_owner_email: Code owner email from config (optional)
+
+    Returns:
+        List of selected reviewer dicts
+    """
+    import random
+
+    current_email = current_user.get("email", "").lower()
+    code_owner_email_lower = code_owner_email.lower() if code_owner_email else ""
+
+    # Find code owner in users
+    code_owner = None
+    if code_owner_email_lower:
+        for u in users:
+            if u["email"].lower() == code_owner_email_lower:
+                code_owner = u
+                break
+
+    # Check if pusher is the code owner
+    pusher_is_code_owner = current_email == code_owner_email_lower if code_owner_email_lower else False
+
+    # Filter out current user from reviewer options
+    reviewer_options = [
+        u for u in users
+        if u["email"].lower() != current_email
+    ]
+
+    if not reviewer_options:
+        console.print("[dim]Reviewer seçeneği bulunamadı[/dim]")
+        return []
+
+    selected_reviewers = []
+
+    # Determine how many reviewers needed
+    if pusher_is_code_owner:
+        # Pusher is code owner, need 2 reviewers
+        reviewers_needed = 2
+        console.print("\n[bold cyan]👤 Sen code owner olduğun için 2 reviewer seçmelisin:[/bold cyan]")
+    elif code_owner and code_owner in reviewer_options:
+        # Auto-add code owner
+        selected_reviewers.append(code_owner)
+        reviewer_options = [u for u in reviewer_options if u != code_owner]
+        reviewers_needed = 1
+        console.print(f"\n[green]✓ Code owner otomatik eklendi: {code_owner['name']}[/green]")
+        console.print("[bold]1 reviewer daha seç:[/bold]")
+    else:
+        # No code owner, ask for 1 reviewer
+        reviewers_needed = 1
+        console.print("\n[bold]Reviewer seç:[/bold]")
+
+    console.print("[dim]Virgülle ayırarak birden fazla seç veya boş bırakırsan rastgele atanacak[/dim]")
+    console.print("")
+
+    # Show numbered list
+    for i, user in enumerate(reviewer_options[:10], 1):
+        console.print(f"  [{i}] {user['name']} <{user['email']}>")
+
+    if len(reviewer_options) > 10:
+        console.print(f"  [dim]... ve {len(reviewer_options) - 10} kişi daha[/dim]")
+
+    console.print("")
+
+    selection = Prompt.ask(
+        f"Seçim ({reviewers_needed} kişi, ör: 1,2 veya isim)",
+        default=""
+    )
+
+    # Parse selection
+    if selection.strip():
+        parts = [p.strip() for p in selection.split(",")]
+
+        for part in parts:
+            if not part:
+                continue
+
+            # Try as number first
+            if part.isdigit():
+                idx = int(part) - 1
+                if 0 <= idx < len(reviewer_options):
+                    user = reviewer_options[idx]
+                    if user not in selected_reviewers:
+                        selected_reviewers.append(user)
+                continue
+
+            # Try to match by name/email
+            matched = _match_user(part, reviewer_options)
+            if matched and matched not in selected_reviewers:
+                selected_reviewers.append(matched)
+
+    # Auto-fill with random if needed
+    manual_count = len(selected_reviewers) - (1 if code_owner and code_owner in selected_reviewers else 0)
+    remaining_needed = reviewers_needed - manual_count
+
+    if remaining_needed > 0 and reviewer_options:
+        # Filter out already selected
+        available = [u for u in reviewer_options if u not in selected_reviewers]
+        if available:
+            random_picks = random.sample(available, min(remaining_needed, len(available)))
+            for pick in random_picks:
+                selected_reviewers.append(pick)
+                console.print(f"[yellow]⚡ Rastgele atandı: {pick['name']}[/yellow]")
+
+    # Show final reviewers
+    if selected_reviewers:
+        console.print("\n[green]Seçilen reviewerlar:[/green]")
+        for r in selected_reviewers:
+            is_code_owner = code_owner and r == code_owner
+            label = " [dim](code owner)[/dim]" if is_code_owner else ""
+            console.print(f"  [green]✓[/green] {r['name']}{label}")
+
+    return selected_reviewers
+
+
 def _get_available_branches(gitops: GitOps) -> List[str]:
     """Get list of remote branches for target selection."""
     branches = []
@@ -181,13 +310,14 @@ def _get_available_branches(gitops: GitOps) -> List[str]:
 def _prompt_mr_options(
     gitops: GitOps,
     current_branch: str,
-    base_branch: str = None
+    base_branch: str = None,
+    config: dict = None
 ) -> Dict:
     """
     Prompt user for MR creation options.
 
     Returns:
-        Dict with 'target_branch', 'delete_source', 'assignee', 'assignee_email'
+        Dict with 'target_branch', 'delete_source', 'assignee', 'assignee_email', 'reviewers'
     """
     console.print("\n[bold cyan]🔀 Merge Request Ayarları[/bold cyan]\n")
 
@@ -204,6 +334,12 @@ def _prompt_mr_options(
     # 2. Delete source branch after merge?
     delete_source = Confirm.ask(
         f"Merge sonrası '{current_branch}' dalını sil?",
+        default=True
+    )
+
+    # 2.5. Auto-merge?
+    auto_merge = Confirm.ask(
+        "Onaylandığında otomatik merge yapılsın mı?",
         default=True
     )
 
@@ -239,11 +375,20 @@ def _prompt_mr_options(
     if assignee:
         console.print(f"[dim]Atanan: {assignee}[/dim]")
 
+    # 4. Reviewers (multiple selection with code owner logic)
+    code_owner_email = None
+    if config:
+        code_owner_email = config.get("project", {}).get("code_owner")
+
+    reviewers = _prompt_reviewers(users, current_user, code_owner_email)
+
     return {
         "target_branch": target_branch,
         "delete_source": delete_source,
+        "auto_merge": auto_merge,
         "assignee": assignee,
-        "assignee_email": assignee_email
+        "assignee_email": assignee_email,
+        "reviewers": reviewers
     }
 
 
@@ -254,7 +399,9 @@ def _create_mr_with_push_options(
     title: str,
     description: str = "",
     delete_source: bool = True,
+    auto_merge: bool = False,
     assignee: str = None,
+    reviewers: List[Dict[str, str]] = None,
     remote_type: str = "gitlab"
 ) -> Tuple[bool, Optional[str]]:
     """
@@ -285,6 +432,19 @@ def _create_mr_with_push_options(
             # GitLab uses username, try to extract from email
             username = assignee.split("@")[0] if "@" in assignee else assignee
             push_options.extend(["-o", f"merge_request.assign={username}"])
+
+        # Add reviewers (GitLab supports multiple reviewers)
+        if reviewers:
+            for reviewer in reviewers:
+                # Extract username from email
+                reviewer_email = reviewer.get("email", "")
+                reviewer_username = reviewer_email.split("@")[0] if "@" in reviewer_email else reviewer.get("name", "")
+                if reviewer_username:
+                    push_options.extend(["-o", f"merge_request.reviewer={reviewer_username}"])
+
+        # Enable auto-merge (merge when pipeline succeeds)
+        if auto_merge:
+            push_options.extend(["-o", "merge_request.merge_when_pipeline_succeeds"])
 
         # Build push command
         cmd = ["git", "push", "-u", "origin", source_branch] + push_options
@@ -338,14 +498,34 @@ def _create_mr_with_push_options(
             if assignee:
                 cmd.extend(["--assignee", assignee])
 
+            # Add reviewers
+            if reviewers:
+                for reviewer in reviewers:
+                    reviewer_email = reviewer.get("email", "")
+                    reviewer_username = reviewer_email.split("@")[0] if "@" in reviewer_email else reviewer.get("name", "")
+                    if reviewer_username:
+                        cmd.extend(["--reviewer", reviewer_username])
+
             result = subprocess.run(cmd, capture_output=True, text=True)
 
             if result.returncode == 0:
                 # Extract PR URL from output
                 pr_url = result.stdout.strip()
-                if "http" in pr_url:
-                    return True, pr_url
-                return True, None
+                if "http" not in pr_url:
+                    pr_url = None
+
+                # Enable auto-merge
+                if auto_merge and pr_url:
+                    merge_result = subprocess.run(
+                        ["gh", "pr", "merge", source_branch, "--auto", "--merge"],
+                        capture_output=True, text=True
+                    )
+                    if merge_result.returncode == 0:
+                        console.print("[green]  ✓ Auto-merge etkinleştirildi[/green]")
+                    else:
+                        console.print(f"[yellow]  ⚠️ Auto-merge etkinleştirilemedi: {merge_result.stderr.strip()}[/yellow]")
+
+                return True, pr_url
             else:
                 console.print(f"[yellow]gh CLI failed: {result.stderr}[/yellow]")
                 console.print("[dim]GitHub PR oluşturmak için 'gh' CLI yükleyin veya GitHub integration ekleyin[/dim]")
@@ -551,6 +731,15 @@ def push_cmd(
         state_manager.clear_session()
         console.print("[dim]Session cleared.[/dim]")
 
+        # Switch back to base branch
+        try:
+            current = gitops.repo.active_branch.name
+            if current != base_branch:
+                gitops.repo.git.checkout(base_branch)
+                console.print(f"[dim]Switched to {base_branch}[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Could not switch to {base_branch}: {e}[/yellow]")
+
     console.print("\n[bold green]✅ Push complete![/bold green]")
 
 
@@ -593,7 +782,7 @@ def _push_merge_request_strategy(
 
         # Ask MR options once for all branches
         console.print(f"\n[bold cyan]🔀 Tüm dallar için Merge Request Ayarları[/bold cyan]")
-        mr_options = _prompt_mr_options(gitops, branches[0].get("branch", ""), base_branch)
+        mr_options = _prompt_mr_options(gitops, branches[0].get("branch", ""), base_branch, config)
 
     for b in branches:
         branch_name = b.get("branch", "")
@@ -651,7 +840,9 @@ def _push_merge_request_strategy(
                     title=mr_title,
                     description=f"Refs: {issue_key}" if issue_key else "",
                     delete_source=mr_options["delete_source"],
+                    auto_merge=mr_options.get("auto_merge", False),
                     assignee=mr_options["assignee_email"],
+                    reviewers=mr_options.get("reviewers"),
                     remote_type=remote_type
                 )
 
@@ -1127,7 +1318,7 @@ def _push_current_branch(
                 console.print(f"[dim]Detected remote: {remote_type}[/dim]")
 
             # Get MR options from user
-            mr_options = _prompt_mr_options(gitops, current_branch)
+            mr_options = _prompt_mr_options(gitops, current_branch, config=config)
 
             # Build MR title
             mr_title = f"{issue_key}: " if issue_key else ""
@@ -1142,7 +1333,9 @@ def _push_current_branch(
                 title=mr_title,
                 description=f"Refs: {issue_key}" if issue_key else "",
                 delete_source=mr_options["delete_source"],
+                auto_merge=mr_options.get("auto_merge", False),
                 assignee=mr_options["assignee_email"],
+                reviewers=mr_options.get("reviewers"),
                 remote_type=remote_type
             )
 
