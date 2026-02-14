@@ -281,6 +281,20 @@ def select_quality_settings() -> dict:
 
 
 
+def get_git_user_email() -> str:
+    """Get current git user email."""
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.email"],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return ""
+
+
 def init_cmd():
     """Initialize redgit configuration for this project."""
     config = {}
@@ -288,9 +302,22 @@ def init_cmd():
     typer.echo("\n🧠 redgit v1.0 setup wizard\n")
 
     # Project info
+    project_name = typer.prompt("📌 Project name", default=Path(".").resolve().name)
+
+    # Code owner (for reviewer assignment)
+    typer.echo("\n👤 Code Owner (main reviewer for merge requests):")
+    default_email = get_git_user_email()
+    code_owner = typer.prompt(
+        "   Email",
+        default=default_email if default_email else ""
+    )
+
     config["project"] = {
-        "name": typer.prompt("📌 Project name", default=Path(".").resolve().name),
+        "name": project_name,
     }
+
+    if code_owner:
+        config["project"]["code_owner"] = code_owner
 
     # LLM selection
     provider, model, api_key = select_llm_provider()
