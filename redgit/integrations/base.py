@@ -8,6 +8,7 @@ Integration Types:
 - ci_cd: GitHub Actions, GitLab CI, Jenkins, CircleCI
 - code_quality: SonarQube, CodeClimate, Snyk, Codecov
 - tunnel: Ngrok, Cloudflare Tunnel, Localtunnel
+- error_tracking: Sentry, Bugsnag, Rollbar, Raygun
 """
 
 import os
@@ -26,6 +27,7 @@ class IntegrationType(Enum):
     CI_CD = "ci_cd"
     CODE_QUALITY = "code_quality"
     TUNNEL = "tunnel"
+    ERROR_TRACKING = "error_tracking"
 
 
 @dataclass
@@ -139,6 +141,71 @@ class CoverageReport:
     # Comparison
     coverage_change: Optional[float] = None    # delta from base
     base_coverage: Optional[float] = None
+
+
+@dataclass
+class ErrorStackFrame:
+    """Standardized stack trace frame representation"""
+    filename: str                      # File path
+    function: str                      # Function/method name
+    lineno: int                        # Line number
+    colno: Optional[int] = None        # Column number
+    context_line: Optional[str] = None # Source code at this line
+    pre_context: Optional[List[str]] = None   # Lines before
+    post_context: Optional[List[str]] = None  # Lines after
+    in_app: bool = True                # Is this app code (vs library)
+    module: Optional[str] = None       # Module name
+    package: Optional[str] = None      # Package name
+
+
+@dataclass
+class ErrorEvent:
+    """Standardized single error event representation"""
+    id: str                            # Event ID
+    timestamp: str                     # When the event occurred (ISO format)
+    message: Optional[str] = None      # Error message
+    environment: Optional[str] = None  # production, staging, development
+    release: Optional[str] = None      # Release/version
+    user_id: Optional[str] = None      # Affected user ID
+    user_email: Optional[str] = None   # Affected user email
+    tags: Optional[Dict[str, str]] = None      # Event tags
+    context: Optional[Dict[str, Any]] = None   # Additional context
+    stacktrace: Optional[List[ErrorStackFrame]] = None  # Stack trace
+
+
+@dataclass
+class ErrorGroup:
+    """Standardized grouped error/issue representation"""
+    id: str                            # Error group ID
+    title: str                         # Error title/name
+    culprit: str                       # Code location that caused the error
+    level: str                         # "fatal", "error", "warning", "info"
+    status: str                        # "unresolved", "resolved", "ignored"
+    platform: str                      # "python", "javascript", "node", etc.
+    first_seen: str                    # First occurrence (ISO format)
+    last_seen: str                     # Last occurrence (ISO format)
+    count: int                         # Total event count
+    user_count: int                    # Number of affected users
+    # Location info (from most recent event)
+    filename: Optional[str] = None     # Primary file
+    function: Optional[str] = None     # Primary function
+    lineno: Optional[int] = None       # Line number
+    # Stack trace from most recent event
+    stacktrace: Optional[List[ErrorStackFrame]] = None
+    # Metadata
+    url: Optional[str] = None          # Link to error in service
+    short_id: Optional[str] = None     # Short display ID (e.g., "SENTRY-123")
+    affected_files: Optional[List[str]] = None  # All files in stacktrace
+    metadata: Optional[Dict[str, Any]] = None   # Additional metadata
+
+
+@dataclass
+class ErrorMatchResult:
+    """Result of matching errors to changed files"""
+    error: ErrorGroup                  # The matched error
+    matched_files: List[str]           # Files that matched
+    confidence: float                  # Match confidence (0.0 - 1.0)
+    match_reason: str                  # Why this matched: "exact_file", "stacktrace_file", "directory", "function"
 
 
 class IntegrationBase(ABC):
@@ -1594,6 +1661,411 @@ class TunnelBase(IntegrationBase):
             "running": False,
             "url": None,
             "integration": self.name
+        }
+
+
+class ErrorTrackingBase(IntegrationBase):
+    """
+    Base class for error tracking integrations.
+
+    Tracks application errors and exceptions from services like Sentry,
+    Bugsnag, Rollbar, Raygun, etc. Enables linking commits to errors
+    and auto-resolving issues on deploy.
+    """
+
+    integration_type = IntegrationType.ERROR_TRACKING
+
+    # Service-specific identifier prefix (e.g., "SENTRY", "BUGSNAG")
+    error_prefix: str = "ERROR"
+
+    # Default environment to filter errors
+    default_environment: str = "production"
+
+    # Minimum confidence score for file matching
+    min_confidence: float = 0.5
+
+    # Auto-resolve errors when commits are linked
+    auto_resolve: bool = False
+
+    @abstractmethod
+    def get_recent_errors(
+        self,
+        limit: int = 20,
+        status: str = "unresolved",
+        environment: str = None
+    ) -> List[ErrorGroup]:
+        """
+        Get recent error groups/issues.
+
+        Args:
+            limit: Maximum number of errors to return
+            status: Filter by status ("unresolved", "resolved", "ignored")
+            environment: Filter by environment (uses default_environment if None)
+
+        Returns:
+            List of ErrorGroup objects
+        """
+        pass
+
+    @abstractmethod
+    def get_error(self, error_id: str) -> Optional[ErrorGroup]:
+        """
+        Get a specific error group by ID.
+
+        Args:
+            error_id: Error group ID
+
+        Returns:
+            ErrorGroup object or None if not found
+        """
+        pass
+
+    @abstractmethod
+    def get_error_events(
+        self,
+        error_id: str,
+        limit: int = 10
+    ) -> List[ErrorEvent]:
+        """
+        Get individual events for an error group.
+
+        Args:
+            error_id: Error group ID
+            limit: Maximum number of events to return
+
+        Returns:
+            List of ErrorEvent objects
+        """
+        pass
+
+    @abstractmethod
+    def link_commit_to_error(
+        self,
+        error_id: str,
+        commit_sha: str,
+        repository: str = None
+    ) -> bool:
+        """
+        Link a commit to an error group.
+
+        Args:
+            error_id: Error group ID
+            commit_sha: Git commit SHA
+            repository: Repository name (optional)
+
+        Returns:
+            True if linked successfully
+        """
+        pass
+
+    @abstractmethod
+    def resolve_error(
+        self,
+        error_id: str,
+        status: str = "resolved",
+        resolve_in_release: str = None
+    ) -> bool:
+        """
+        Resolve or change status of an error group.
+
+        Args:
+            error_id: Error group ID
+            status: New status ("resolved", "ignored", "unresolved")
+            resolve_in_release: Mark as resolved in specific release
+
+        Returns:
+            True if status changed successfully
+        """
+        pass
+
+    def get_errors_for_files(
+        self,
+        file_paths: List[str],
+        status: str = "unresolved",
+        environment: str = None,
+        min_confidence: float = None
+    ) -> List[ErrorMatchResult]:
+        """
+        Find errors that match the given file paths.
+
+        This method matches changed files against error stacktraces
+        to find potentially related errors.
+
+        Args:
+            file_paths: List of file paths to match against
+            status: Filter errors by status
+            environment: Filter by environment
+            min_confidence: Minimum confidence threshold (uses self.min_confidence if None)
+
+        Returns:
+            List of ErrorMatchResult objects sorted by confidence (highest first)
+        """
+        if min_confidence is None:
+            min_confidence = self.min_confidence
+
+        # Get recent errors
+        errors = self.get_recent_errors(
+            limit=100,
+            status=status,
+            environment=environment or self.default_environment
+        )
+
+        results = []
+
+        # Normalize file paths for comparison
+        normalized_paths = set()
+        for fp in file_paths:
+            # Remove leading ./ or /
+            clean = fp.lstrip('./').lstrip('/')
+            normalized_paths.add(clean)
+            # Also add just the filename
+            normalized_paths.add(clean.split('/')[-1])
+
+        for error in errors:
+            matched_files = []
+            confidence = 0.0
+            match_reason = ""
+
+            # Check direct filename match
+            if error.filename:
+                error_file = error.filename.lstrip('./').lstrip('/')
+                error_basename = error_file.split('/')[-1]
+
+                for fp in file_paths:
+                    clean_fp = fp.lstrip('./').lstrip('/')
+                    fp_basename = clean_fp.split('/')[-1]
+
+                    # Exact path match
+                    if clean_fp == error_file or clean_fp.endswith('/' + error_file):
+                        matched_files.append(fp)
+                        confidence = max(confidence, 1.0)
+                        match_reason = "exact_file"
+                    # Basename match
+                    elif fp_basename == error_basename:
+                        matched_files.append(fp)
+                        confidence = max(confidence, 0.8)
+                        if not match_reason:
+                            match_reason = "basename_match"
+
+            # Check affected_files from stacktrace
+            if error.affected_files:
+                for affected in error.affected_files:
+                    affected_clean = affected.lstrip('./').lstrip('/')
+                    affected_basename = affected_clean.split('/')[-1]
+
+                    for fp in file_paths:
+                        clean_fp = fp.lstrip('./').lstrip('/')
+                        fp_basename = clean_fp.split('/')[-1]
+
+                        if clean_fp == affected_clean or clean_fp.endswith('/' + affected_clean):
+                            if fp not in matched_files:
+                                matched_files.append(fp)
+                            confidence = max(confidence, 0.9)
+                            if match_reason not in ("exact_file",):
+                                match_reason = "stacktrace_file"
+                        elif fp_basename == affected_basename:
+                            if fp not in matched_files:
+                                matched_files.append(fp)
+                            confidence = max(confidence, 0.6)
+                            if not match_reason:
+                                match_reason = "stacktrace_basename"
+
+            # Check stacktrace frames directly
+            if error.stacktrace:
+                for frame in error.stacktrace:
+                    if not frame.in_app:
+                        continue
+
+                    frame_file = frame.filename.lstrip('./').lstrip('/')
+                    frame_basename = frame_file.split('/')[-1]
+
+                    for fp in file_paths:
+                        clean_fp = fp.lstrip('./').lstrip('/')
+                        fp_basename = clean_fp.split('/')[-1]
+
+                        if clean_fp == frame_file:
+                            if fp not in matched_files:
+                                matched_files.append(fp)
+                            confidence = max(confidence, 0.95)
+                            if match_reason not in ("exact_file",):
+                                match_reason = "stacktrace_exact"
+                        elif fp_basename == frame_basename:
+                            if fp not in matched_files:
+                                matched_files.append(fp)
+                            confidence = max(confidence, 0.5)
+                            if not match_reason:
+                                match_reason = "stacktrace_basename"
+
+            # Add to results if confidence meets threshold
+            if matched_files and confidence >= min_confidence:
+                results.append(ErrorMatchResult(
+                    error=error,
+                    matched_files=matched_files,
+                    confidence=confidence,
+                    match_reason=match_reason
+                ))
+
+        # Sort by confidence (highest first)
+        results.sort(key=lambda r: r.confidence, reverse=True)
+
+        return results
+
+    def format_error_ref(self, error: ErrorGroup) -> str:
+        """
+        Format an error reference for commit messages.
+
+        Args:
+            error: ErrorGroup object
+
+        Returns:
+            Formatted reference string (e.g., "Fixes: SENTRY-123")
+        """
+        short_id = error.short_id or f"{self.error_prefix}-{error.id[:8]}"
+        return f"Fixes: {short_id}"
+
+    def format_error_context(
+        self,
+        error: ErrorGroup,
+        include_stacktrace: bool = False,
+        max_frames: int = 5
+    ) -> str:
+        """
+        Format error context for issue descriptions.
+
+        Args:
+            error: ErrorGroup object
+            include_stacktrace: Whether to include stacktrace
+            max_frames: Maximum stacktrace frames to include
+
+        Returns:
+            Formatted error context string
+        """
+        lines = [
+            f"**Error:** {error.title}",
+            f"- **Level:** {error.level}",
+            f"- **Occurrences:** {error.count}",
+            f"- **Users affected:** {error.user_count}",
+            f"- **First seen:** {error.first_seen}",
+            f"- **Last seen:** {error.last_seen}",
+        ]
+
+        if error.culprit:
+            lines.append(f"- **Culprit:** `{error.culprit}`")
+
+        if error.url:
+            lines.append(f"- **Link:** {error.url}")
+
+        if include_stacktrace and error.stacktrace:
+            lines.append("\n**Stack Trace:**")
+            lines.append("```")
+            for i, frame in enumerate(error.stacktrace[:max_frames]):
+                if frame.in_app:
+                    lines.append(f"  {frame.filename}:{frame.lineno} in {frame.function}")
+                    if frame.context_line:
+                        lines.append(f"    > {frame.context_line.strip()}")
+            if len(error.stacktrace) > max_frames:
+                lines.append(f"  ... and {len(error.stacktrace) - max_frames} more frames")
+            lines.append("```")
+
+        return "\n".join(lines)
+
+    def on_commit(self, group: dict, context: dict):
+        """
+        Hook called after each commit.
+
+        Links the commit to any matched errors and optionally resolves them.
+
+        Args:
+            group: Commit group dict with files, message, etc.
+            context: Context dict with commit_sha, branch, etc.
+        """
+        commit_sha = context.get("commit_sha")
+        if not commit_sha:
+            return
+
+        # Check if there are matched errors in the group
+        matched_errors = group.get("matched_errors", [])
+        for match in matched_errors:
+            error = match.get("error")
+            if not error:
+                continue
+
+            error_id = error.id if isinstance(error, ErrorGroup) else error.get("id")
+            if error_id:
+                # Link commit to error
+                self.link_commit_to_error(error_id, commit_sha)
+
+                # Auto-resolve if configured
+                if self.auto_resolve:
+                    self.resolve_error(error_id, status="resolved")
+
+    def get_error_stats(
+        self,
+        environment: str = None
+    ) -> Dict[str, Any]:
+        """
+        Get error statistics summary.
+
+        Args:
+            environment: Filter by environment
+
+        Returns:
+            Dict with error statistics
+        """
+        errors = self.get_recent_errors(
+            limit=100,
+            status="unresolved",
+            environment=environment or self.default_environment
+        )
+
+        total_count = sum(e.count for e in errors)
+        total_users = sum(e.user_count for e in errors)
+
+        # Group by level
+        by_level = {}
+        for error in errors:
+            by_level[error.level] = by_level.get(error.level, 0) + 1
+
+        return {
+            "total_errors": len(errors),
+            "total_events": total_count,
+            "total_users_affected": total_users,
+            "by_level": by_level,
+            "environment": environment or self.default_environment
+        }
+
+    @classmethod
+    def get_prompts(cls) -> Dict[str, Dict[str, Any]]:
+        """
+        Get exportable prompts for this integration.
+
+        Returns:
+            Dict of prompt definitions
+        """
+        return {
+            "error_commit_message": {
+                "description": "Generate commit message for error fix",
+                "content": """Generate a commit message for fixing an error.
+
+## Error Details
+- Title: {error_title}
+- Culprit: {error_culprit}
+- Level: {error_level}
+- Occurrences: {error_count}
+
+## Files Changed
+{files}
+
+## Requirements
+- Start with "fix:" prefix
+- Be specific about what was fixed
+- Keep title under 72 characters
+
+## Response
+Return ONLY the commit title, nothing else.
+""",
+                "variables": ["error_title", "error_culprit", "error_level", "error_count", "files"]
+            }
         }
 
 
