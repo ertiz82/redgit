@@ -1,6 +1,46 @@
 # Changelog
 
 
+# 1.4.1
+
+**Release Date:** 2026-03-30
+**Previous Version:** v1.4.0
+**Total Commits:** 7
+
+---
+
+## Commit Details
+
+### ✨ Features (3)
+
+- **commit:** enhance proposal and push functionality (`0ec15c8`)
+- **cli:** enhance initialization and core functionality (`3dd3333`)
+- **utils:** add version checking utility (`5e7ffd3`)
+
+### ♻️ Refactoring (1)
+
+- **integrations:** update base and registry (`7ef8e77`)
+
+### 📚 Documentation (1)
+
+- **readme:** update README and logo (`86c00e5`)
+
+### 🔧 Chores (2)
+
+- **config:** update pyproject.toml (`a4da453`)
+- **formula:** update redgit.rb formula (`25e6412`)
+
+---
+
+## Contributors
+
+- **Erman Titiz**: 7 commits (100.0%) `████████████████████`
+  - +1113 / -244 lines
+
+
+---
+
+
 # 1.3.3
 
 **Release Date:** 2026-01-14
