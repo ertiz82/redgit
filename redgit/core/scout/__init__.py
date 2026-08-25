@@ -5,14 +5,14 @@ Core module for project analysis, task planning, and team management.
 This is a built-in core feature, not an integration.
 
 Commands:
-- rg scout analyze       : Analyze project structure
-- rg scout show          : Show current analysis
-- rg scout plan          : Generate task plan from analysis
-- rg scout sync          : Sync tasks to task management system
-- rg scout team          : Manage team configuration
-- rg scout team-init     : Initialize team from task management
-- rg scout assign        : Auto-assign tasks to team
-- rg scout timeline      : Show project timeline
+- rgt scout analyze       : Analyze project structure
+- rgt scout show          : Show current analysis
+- rgt scout plan          : Generate task plan from analysis
+- rgt scout sync          : Sync tasks to task management system
+- rgt scout team          : Manage team configuration
+- rgt scout team-init     : Initialize team from task management
+- rgt scout assign        : Auto-assign tasks to team
+- rgt scout timeline      : Show project timeline
 """
 
 import json
@@ -122,7 +122,7 @@ class Scout:
             analysis = self.get_analysis()
 
         if not analysis:
-            raise ValueError("No analysis found. Run 'rg scout analyze' first.")
+            raise ValueError("No analysis found. Run 'rgt scout analyze' first.")
 
         config = ConfigManager().load()
         llm = LLMClient(config.get("llm", {}))
@@ -164,7 +164,7 @@ class Scout:
             tasks = self.get_plan()
 
         if not tasks:
-            raise ValueError("No plan found. Run 'rg scout plan' first.")
+            raise ValueError("No plan found. Run 'rgt scout plan' first.")
 
         if not self.task_management:
             raise ValueError("No task management integration configured for scout.")
@@ -614,7 +614,7 @@ Only output the YAML block, nothing else."""
             analysis = self.get_analysis()
 
         if not analysis:
-            raise ValueError("No analysis found. Run 'rg scout analyze' first.")
+            raise ValueError("No analysis found. Run 'rgt scout analyze' first.")
 
         # Load team
         team_mgr = TeamManager()

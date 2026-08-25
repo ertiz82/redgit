@@ -35,14 +35,14 @@ def start_cmd(
     if not tunnel:
         console.print("[red]No tunnel integration configured[/red]")
         console.print("\nInstall one with:")
-        console.print("  rg install ngrok")
-        console.print("  rg install cloudflare-tunnel")
-        console.print("  rg install localtunnel")
+        console.print("  rgt install ngrok")
+        console.print("  rgt install cloudflare-tunnel")
+        console.print("  rgt install localtunnel")
         raise typer.Exit(1)
 
     if not tunnel.enabled:
         console.print(f"[red]{tunnel.name} is not configured properly[/red]")
-        console.print(f"\nReconfigure with: rg integration configure {tunnel.name}")
+        console.print(f"\nReconfigure with: rgt integration configure {tunnel.name}")
         raise typer.Exit(1)
 
     # Check if already running
@@ -64,7 +64,7 @@ def start_cmd(
         console.print(f"[green]Tunnel started[/green]")
         console.print(f"   Public URL: {url}")
         console.print(f"   Local port: {port}")
-        console.print(f"\nStop with: rg tunnel stop")
+        console.print(f"\nStop with: rgt tunnel stop")
     else:
         console.print(f"[red]Failed to start tunnel[/red]")
         raise typer.Exit(1)
@@ -100,7 +100,7 @@ def status_cmd():
     tunnel = get_tunnel_integration(config)
     if not tunnel:
         console.print("[dim]No tunnel integration configured[/dim]")
-        console.print("\nInstall one with: rg install ngrok")
+        console.print("\nInstall one with: rgt install ngrok")
         return
 
     status = tunnel.get_status()
@@ -116,7 +116,7 @@ def status_cmd():
     else:
         console.print("[dim]Not running[/dim]")
         console.print(f"   Integration: {tunnel.name}")
-        console.print("\nStart with: rg tunnel start <port>")
+        console.print("\nStart with: rgt tunnel start <port>")
 
 
 @tunnel_app.command("url")

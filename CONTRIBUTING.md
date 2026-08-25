@@ -14,7 +14,7 @@ Before creating bug reports, please check the [existing issues](https://github.c
 
 When you create a bug report, include as many details as possible:
 
-- **RedGit version** (`rg --version`)
+- **RedGit version** (`rgt --version`)
 - **Python version** (`python --version`)
 - **Operating system**
 - **Steps to reproduce**
@@ -53,7 +53,7 @@ You can either:
    ruff check redgit/
 
    # Test manually
-   rg --help
+   rgt --help
    ```
 5. **Commit your changes** using conventional commits:
    ```
@@ -82,7 +82,7 @@ cd redgit
 pip install -e .
 
 # Verify installation
-rg --version
+rgt --version
 ```
 
 ### Project Structure

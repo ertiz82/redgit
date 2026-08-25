@@ -1684,5 +1684,5 @@ def _display_conflict_error(conflict_files: List[str], branch: str):
     console.print(f"      [dim]git pull origin {branch}[/dim]")
     console.print("      [dim]# Fix conflicts in files[/dim]")
     console.print("      [dim]git add . && git commit[/dim]")
-    console.print("   2. Skip sync check: [cyan]rg push --no-pull[/cyan]")
-    console.print("   3. Force push (caution!): [cyan]rg push --force[/cyan]")
+    console.print("   2. Skip sync check: [cyan]rgt push --no-pull[/cyan]")
+    console.print("   3. Force push (caution!): [cyan]rgt push --force[/cyan]")

@@ -86,8 +86,8 @@ def list_cmd(
 
     if not installed_names:
         typer.echo("\n📦 No integrations installed.\n")
-        typer.echo("  💡 Install from taps: rg install <name>")
-        typer.echo("  💡 Browse available: rg integration list --all")
+        typer.echo("  💡 Install from taps: rgt install <name>")
+        typer.echo("  💡 Browse available: rgt integration list --all")
         typer.echo("")
         return
 
@@ -168,16 +168,16 @@ def list_cmd(
                         typer.echo(f"      {integ.description[:60]}...")
                 typer.echo("")
 
-            typer.echo("  💡 Install: rg install <name>")
+            typer.echo("  💡 Install: rgt install <name>")
             typer.echo("")
     else:
-        typer.echo("  💡 Show all from taps: rg integration list --all")
+        typer.echo("  💡 Show all from taps: rgt integration list --all")
         typer.echo("")
 
     typer.echo("  💡 Commands:")
-    typer.echo("     rg install <name>              - Install from tap")
-    typer.echo("     rg integration config <name>   - Reconfigure")
-    typer.echo("     rg integration use <name>      - Set as active")
+    typer.echo("     rgt install <name>              - Install from tap")
+    typer.echo("     rgt integration config <name>   - Reconfigure")
+    typer.echo("     rgt integration use <name>      - Set as active")
     typer.echo("")
 
 
@@ -196,7 +196,7 @@ def _is_configured(config: dict, schema: dict) -> bool:
 
 
 def configure_integration(name: str):
-    """Configure an integration (called by rg install)"""
+    """Configure an integration (called by rgt install)"""
     # Get all integrations including global (tap-installed)
     all_integrations = get_all_integrations()
 
@@ -412,7 +412,7 @@ def _prompt_field(field: dict, config_values: dict = None):
                 return None
             else:
                 typer.secho(f"   ❌ No {integration_type_str} integrations configured.", fg=typer.colors.RED)
-                typer.echo(f"   💡 Install one first: rg integration install jira")
+                typer.echo(f"   💡 Install one first: rgt integration install jira")
                 return None
 
         # Show options
@@ -483,7 +483,7 @@ def update_cmd(
 
     if not installed_names:
         typer.echo("\n📦 No integrations installed.\n")
-        typer.echo("  💡 Install from taps: rg install <name>")
+        typer.echo("  💡 Install from taps: rgt install <name>")
         return
 
     # Determine which integrations to update
@@ -603,7 +603,7 @@ def use_cmd(name: str):
             # Reload config after configuration
             config = ConfigManager().load()
         else:
-            typer.echo(f"   💡 Run 'rg install {name}' first")
+            typer.echo(f"   💡 Run 'rgt install {name}' first")
             raise typer.Exit(1)
 
     # Set as active
@@ -639,7 +639,7 @@ def _generate_init_py(name: str, class_name: str, base_class: str, type_name: st
 
 {description}
 
-This integration was created with: rg integration create
+This integration was created with: rgt integration create
 Documentation: See README.md in this folder
 """
 
@@ -773,7 +773,7 @@ def _generate_commands_py(name: str, class_name: str) -> str:
 CLI commands for {class_name} integration.
 
 Commands are automatically registered when the integration is active.
-Usage: rg {name} <command>
+Usage: rgt {name} <command>
 """
 
 import typer
@@ -792,7 +792,7 @@ def status_cmd():
 
     if not integration_config.get("enabled"):
         typer.secho("❌ {class_name} integration is not enabled.", fg=typer.colors.RED)
-        typer.echo("   Run: rg integration install {name}")
+        typer.echo("   Run: rgt integration install {name}")
         raise typer.Exit(1)
 
     integration = load_integration_by_name("{name}", integration_config)
@@ -891,7 +891,7 @@ def _generate_readme(name: str, class_name: str, description: str) -> str:
 ## Installation
 
 ```bash
-rg integration install {name}
+rgt integration install {name}
 ```
 
 ## Configuration
@@ -917,14 +917,14 @@ export {name.upper()}_API_KEY="your-api-key"
 
 ```bash
 # Check integration status
-rg {name} status
+rgt {name} status
 
 # Run a test
-rg {name} test "Hello World"
+rgt {name} test "Hello World"
 
 # Analyze content with AI
-rg {name} analyze --text "Your text here"
-rg {name} analyze --file path/to/file.txt
+rgt {name} analyze --text "Your text here"
+rgt {name} analyze --file path/to/file.txt
 ```
 
 ### Programmatic Usage
@@ -986,8 +986,8 @@ prompt = self._load_prompt("analyze", content="Your content here")
 
 ```bash
 # Test your integration
-rg {name} status
-rg {name} test
+rgt {name} status
+rgt {name} test
 ```
 
 ## API Reference
@@ -1190,6 +1190,6 @@ def create_cmd(name: str = typer.Argument(None, help="Integration name (lowercas
     typer.echo(f"\n   📚 Next steps:")
     typer.echo(f"      1. Edit {integration_dir}/__init__.py to add your logic")
     typer.echo(f"      2. Customize prompts in {prompts_dir}/")
-    typer.echo(f"      3. Install: rg integration install {name}")
-    typer.echo(f"      4. Test: rg {name} status")
+    typer.echo(f"      3. Install: rgt integration install {name}")
+    typer.echo(f"      4. Test: rgt {name} status")
     typer.echo("")

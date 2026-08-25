@@ -18,18 +18,18 @@ Plugins extend RedGit with framework-specific features and additional functional
 1. **Auto-Detection** - Framework plugins detect project type automatically
 2. **Enable/Disable** - Manually control which plugins are active
 3. **Configure** - Set plugin-specific options in config
-4. **Use** - Plugins enhance `rg propose` and add new commands
+4. **Use** - Plugins enhance `rgt propose` and add new commands
 
 ### Plugin Commands
 
 ```bash
 # List installed and available plugins
-rg plugin list
-rg plugin list --all
+rgt plugin list
+rgt plugin list --all
 
 # Enable/disable a plugin
-rg plugin enable laravel
-rg plugin disable laravel
+rgt plugin enable laravel
+rgt plugin disable laravel
 ```
 
 ---
@@ -40,11 +40,11 @@ Plugins are available from [RedGit Tap](../tap.md):
 
 ```bash
 # Install a plugin
-rg install plugin:laravel
-rg install plugin:django
+rgt install plugin:laravel
+rgt install plugin:django
 
 # List available
-rg plugin list --all
+rgt plugin list --all
 ```
 
 ---
@@ -79,11 +79,11 @@ plugins:
 Semantic versioning with automatic file updates and git tagging.
 
 ```bash
-rg version init           # Initialize versioning
-rg version show           # Show current version
-rg release patch          # Bump patch (1.0.x)
-rg release minor          # Bump minor (1.x.0)
-rg release major          # Bump major (x.0.0)
+rgt version init           # Initialize versioning
+rgt version show           # Show current version
+rgt release patch          # Bump patch (1.0.x)
+rgt release minor          # Bump minor (1.x.0)
+rgt release major          # Bump major (x.0.0)
 ```
 
 ### Changelog Plugin
@@ -91,9 +91,9 @@ rg release major          # Bump major (x.0.0)
 Automatic changelog generation from commit history.
 
 ```bash
-rg changelog init         # Initialize changelog
-rg changelog generate     # Generate from commits
-rg changelog show         # Show current changelog
+rgt changelog init         # Initialize changelog
+rgt changelog generate     # Generate from commits
+rgt changelog show         # Show current changelog
 ```
 
 ---

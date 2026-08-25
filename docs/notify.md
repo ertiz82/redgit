@@ -10,13 +10,13 @@ RedGit integrates with popular messaging platforms to keep your team informed ab
 
 | Platform | Integration | Install Command |
 |----------|-------------|-----------------|
-| Slack | slack | `rg install slack` |
-| Discord | discord | `rg install discord` |
-| Telegram | telegram | `rg install telegram` |
-| Microsoft Teams | ms-teams | `rg install ms-teams` |
-| Mattermost | mattermost | `rg install mattermost` |
-| Rocket.Chat | rocketchat | `rg install rocketchat` |
-| Zulip | zulip | `rg install zulip` |
+| Slack | slack | `rgt install slack` |
+| Discord | discord | `rgt install discord` |
+| Telegram | telegram | `rgt install telegram` |
+| Microsoft Teams | ms-teams | `rgt install ms-teams` |
+| Mattermost | mattermost | `rgt install mattermost` |
+| Rocket.Chat | rocketchat | `rgt install rocketchat` |
+| Zulip | zulip | `rgt install zulip` |
 
 ---
 
@@ -24,32 +24,32 @@ RedGit integrates with popular messaging platforms to keep your team informed ab
 
 ```bash
 # Install notification integration
-rg install telegram
+rgt install telegram
 
 # Configure
-rg integration configure telegram
+rgt integration configure telegram
 
 # Test notification
-rg notify "Hello from RedGit!"
+rgt notify "Hello from RedGit!"
 ```
 
 ---
 
 ## Commands
 
-### rg notify
+### rgt notify
 
 Send a custom notification.
 
 ```bash
 # Simple message
-rg notify "Deployment complete!"
+rgt notify "Deployment complete!"
 
 # With channel/chat specification
-rg notify "Build passed" --channel "#builds"
+rgt notify "Build passed" --channel "#builds"
 
 # With formatting
-rg notify "**Release v1.2.0** is live!" --format markdown
+rgt notify "**Release v1.2.0** is live!" --format markdown
 ```
 
 **Options:**
@@ -105,10 +105,10 @@ notifications:
 
 ```bash
 # Install
-rg install telegram
+rgt install telegram
 
 # Configure
-rg integration configure telegram
+rgt integration configure telegram
 
 # Required:
 #   - Bot Token (from @BotFather)
@@ -125,10 +125,10 @@ rg integration configure telegram
 
 ```bash
 # Install
-rg install slack
+rgt install slack
 
 # Configure with webhook URL
-rg integration configure slack
+rgt integration configure slack
 
 # Required:
 #   - Webhook URL (from Slack app settings)
@@ -144,10 +144,10 @@ rg integration configure slack
 
 ```bash
 # Install
-rg install discord
+rgt install discord
 
 # Configure
-rg integration configure discord
+rgt integration configure discord
 
 # Required:
 #   - Webhook URL
@@ -162,10 +162,10 @@ rg integration configure discord
 
 ```bash
 # Install
-rg install ms-teams
+rgt install ms-teams
 
 # Configure
-rg integration configure ms-teams
+rgt integration configure ms-teams
 
 # Required:
 #   - Webhook URL (from Teams connector)
@@ -206,7 +206,7 @@ https://github.com/user/repo/actions/runs/124
 👥 Expected: Ahmet, Ayşe, Can
 
 🆔 Session: poker-abc123
-💻 Join: rg poker join poker-abc123
+💻 Join: rgt poker join poker-abc123
 ```
 
 ### Quality Failed
@@ -306,13 +306,13 @@ Some platforms support interactive messages:
 
 ```bash
 # Check integration status
-rg integration list
+rgt integration list
 
 # Test with manual message
-rg notify "Test message"
+rgt notify "Test message"
 
 # Check logs
-rg notify "Test" --verbose
+rgt notify "Test" --verbose
 ```
 
 ### "Bot not responding" (Telegram)
@@ -332,7 +332,7 @@ rg notify "Test" --verbose
 
 ```bash
 # Check event is enabled
-rg config show
+rgt config show
 
 # Verify in config:
 # notifications.events.push: true

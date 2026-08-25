@@ -16,6 +16,7 @@ from redgit.commands.tap import tap_app, install_cmd as tap_install_cmd, uninsta
 from redgit.commands.notify import notify_app
 from redgit.commands.ci import ci_app
 from redgit.commands.config import config_app
+from redgit.commands.llm import llm_app
 from redgit.commands.quality import quality_app
 from redgit.commands.scout import scout_app
 from redgit.commands.webhook import webhook_app
@@ -63,6 +64,7 @@ app.add_typer(tap_app, name="tap")
 app.add_typer(notify_app, name="notify")
 app.add_typer(ci_app, name="ci")
 app.add_typer(config_app, name="config")
+app.add_typer(llm_app, name="llm")
 app.add_typer(quality_app, name="quality")
 app.add_typer(scout_app, name="scout")
 app.add_typer(webhook_app, name="webhook")
@@ -84,15 +86,15 @@ def _load_plugin_commands():
         for name, cmd_app in commands.items():
             app.add_typer(cmd_app, name=name)
 
-        # Load plugin shortcuts (e.g., release_shortcut -> rg release, release_app -> rg release)
+        # Load plugin shortcuts (e.g., release_shortcut -> rgt release, release_app -> rgt release)
         import typer
         shortcuts = get_all_plugin_shortcuts(config)
         for name, cmd in shortcuts.items():
             if isinstance(cmd, typer.Typer):
-                # Typer app shortcut (e.g., release_app -> rg release with subcommands)
+                # Typer app shortcut (e.g., release_app -> rgt release with subcommands)
                 app.add_typer(cmd, name=name)
             else:
-                # Function shortcut (e.g., release_shortcut -> rg release)
+                # Function shortcut (e.g., release_shortcut -> rgt release)
                 app.command(name)(cmd)
 
     except Exception:
@@ -106,7 +108,7 @@ def _load_integration_commands():
         from redgit.integrations.registry import get_all_integration_commands
 
         # Load commands for ALL installed integrations (not just active ones)
-        # This allows `rg jira`, `rg gitlab` etc. to work regardless of activation
+        # This allows `rgt jira`, `rgt gitlab` etc. to work regardless of activation
         commands = get_all_integration_commands()
 
         for name, cmd_app in commands.items():

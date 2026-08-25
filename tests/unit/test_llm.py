@@ -183,7 +183,7 @@ class TestLLMClientInit:
 
         client = LLMClient({"provider": "ollama"})
 
-        assert client.timeout == 120
+        assert client.timeout == 300
 
     @patch('redgit.core.common.llm.load_providers')
     def test_init_raises_for_unknown_provider(self, mock_load):

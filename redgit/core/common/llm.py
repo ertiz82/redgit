@@ -404,13 +404,25 @@ class LLMClient:
         env["NO_COLOR"] = "1"
 
         if self.provider_name == "claude-code":
-            cmd = ["claude", "-p", prompt]
+            cmd = ["claude", "-p"]
+            if self.model:
+                cmd += ["--model", self.model]
+            cmd.append(prompt)
         elif self.provider_name == "qwen-code":
             cmd = ["qwen", prompt]
         else:
             raise ValueError(f"Unknown CLI provider: {self.provider_name}")
 
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL, timeout=self.timeout, env=env
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"LLM CLI timed out after {self.timeout}s. "
+                f"Increase it in .redgit/config.yaml under 'llm.timeout'."
+            )
         if result.returncode != 0:
             raise RuntimeError(f"LLM CLI error: {result.stderr}")
 
@@ -496,13 +508,26 @@ class LLMClient:
         env = os.environ.copy()
         env["NO_COLOR"] = "1"
 
-        result = subprocess.run(
-            ["claude", "--print", "--dangerously-skip-permissions", prompt],
-            capture_output=True,
-            text=True,
-            timeout=self.timeout,
-            env=env
-        )
+        cmd = ["claude", "--print", "--dangerously-skip-permissions"]
+        if self.model:
+            cmd += ["--model", self.model]
+        cmd.append(prompt)
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=self.timeout,
+                env=env
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"Claude CLI timed out after {self.timeout}s. "
+                f"Increase it in .redgit/config.yaml under 'llm.timeout' "
+                f"(e.g. llm.timeout: 600) or reduce 'llm.max_files'."
+            )
 
         if result.returncode != 0:
             raise RuntimeError(f"Claude CLI error: {result.stderr or result.stdout}")
@@ -520,13 +545,21 @@ class LLMClient:
         env["NO_COLOR"] = "1"
 
         # Use -p/--prompt for non-interactive mode with prompt as argument
-        result = subprocess.run(
-            ["qwen", "-p", prompt],
-            capture_output=True,
-            text=True,
-            timeout=self.timeout,
-            env=env
-        )
+        try:
+            result = subprocess.run(
+                ["qwen", "-p", prompt],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=self.timeout,
+                env=env
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"Qwen CLI timed out after {self.timeout}s. "
+                f"Increase it in .redgit/config.yaml under 'llm.timeout' "
+                f"(e.g. llm.timeout: 600) or reduce 'llm.max_files'."
+            )
 
         if result.returncode != 0:
             raise RuntimeError(f"Qwen CLI error: {result.stderr or result.stdout}")

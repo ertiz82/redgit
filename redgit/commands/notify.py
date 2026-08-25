@@ -5,9 +5,9 @@ Sends notifications through the active notification integration (Slack, Discord,
 Can be used by other integrations or directly from CLI.
 
 Usage:
-    rg notify "Deployment complete!"
-    rg notify --event deploy --title "v1.2.3 Released" --message "Deployed to production"
-    rg notify --event alert --level error --title "Build Failed"
+    rgt notify "Deployment complete!"
+    rgt notify --event deploy --title "v1.2.3 Released" --message "Deployed to production"
+    rgt notify --event alert --level error --title "Build Failed"
 """
 
 import typer
@@ -38,13 +38,13 @@ def _check_notifier():
             for name in available:
                 typer.echo(f"     • {name}")
             typer.echo("")
-            typer.echo(f"   Install one: rg install {available[0]}")
+            typer.echo(f"   Install one: rgt install {available[0]}")
         else:
             typer.echo("   Install a notification integration:")
-            typer.echo("     rg install slack")
+            typer.echo("     rgt install slack")
         typer.echo("")
         typer.echo("   Then set as active:")
-        typer.echo("     rg integration use <name>")
+        typer.echo("     rgt integration use <name>")
         raise typer.Exit(1)
     return notifier
 
@@ -63,10 +63,10 @@ def send_cmd(
     Send a notification message.
 
     Examples:
-        rg notify send "Hello World!"
-        rg notify send "Build complete" --event deploy --level success
-        rg notify send "Error occurred" --event alert --level error --title "CI Failed"
-        rg notify send "PR merged" --field "PR=#123" --field "Author=dev"
+        rgt notify send "Hello World!"
+        rgt notify send "Build complete" --event deploy --level success
+        rgt notify send "Error occurred" --event alert --level error --title "CI Failed"
+        rgt notify send "PR merged" --field "PR=#123" --field "Author=dev"
     """
     notifier = _check_notifier()
 
@@ -108,7 +108,7 @@ def commit_cmd(
     Send a commit notification.
 
     Example:
-        rg notify commit "feat: add login" --branch main --author "Developer" --files 5
+        rgt notify commit "feat: add login" --branch main --author "Developer" --files 5
     """
     notifier = _check_notifier()
 
@@ -138,7 +138,7 @@ def branch_cmd(
     Send a branch creation notification.
 
     Example:
-        rg notify branch feature/PROJ-123-login --issue PROJ-123
+        rgt notify branch feature/PROJ-123-login --issue PROJ-123
     """
     notifier = _check_notifier()
 
@@ -162,7 +162,7 @@ def pr_cmd(
     Send a PR creation notification.
 
     Example:
-        rg notify pr "Add user authentication" "https://github.com/..." --head feature/login
+        rgt notify pr "Add user authentication" "https://github.com/..." --head feature/login
     """
     notifier = _check_notifier()
 
@@ -186,7 +186,7 @@ def task_cmd(
     Send a task-related notification.
 
     Example:
-        rg notify task completed PROJ-123 "Add login feature" --url "https://jira..."
+        rgt notify task completed PROJ-123 "Add login feature" --url "https://jira..."
     """
     notifier = _check_notifier()
 
@@ -214,9 +214,9 @@ def alert_cmd(
     Send an alert notification.
 
     Examples:
-        rg notify alert "Build Failed" "Tests are failing on main"
-        rg notify alert "Disk Space Low" --level warning
-        rg notify alert "Service Down" "API server not responding" --level error
+        rgt notify alert "Build Failed" "Tests are failing on main"
+        rgt notify alert "Disk Space Low" --level warning
+        rgt notify alert "Service Down" "API server not responding" --level error
     """
     notifier = _check_notifier()
 
@@ -242,9 +242,9 @@ def status_cmd():
         available = get_integrations_by_type(IntegrationType.NOTIFICATION)
         if available:
             typer.echo(f"\n   Available: {', '.join(available)}")
-            typer.echo(f"   Install: rg install {available[0]}")
+            typer.echo(f"   Install: rgt install {available[0]}")
         else:
-            typer.echo("\n   Install one: rg install slack")
+            typer.echo("\n   Install one: rgt install slack")
         return
 
     notifier = _get_notifier()
@@ -262,7 +262,7 @@ def status_cmd():
             typer.echo(f"   Bot Name: {notifier.username}")
     else:
         typer.secho("   Status: Not configured properly", fg=typer.colors.RED)
-        typer.echo(f"   Run: rg integration install {active_name}")
+        typer.echo(f"   Run: rgt integration install {active_name}")
 
 
 # Quick send shortcut (used by main CLI)

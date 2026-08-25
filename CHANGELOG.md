@@ -1,6 +1,34 @@
 # Changelog
 
 
+# 1.5.0
+
+**Release Date:** 2026-08-25
+**Previous Version:** v1.4.1
+
+---
+
+## Highlights
+
+### ⚠️ Breaking Change
+
+- **CLI shortcut renamed: `rg` → `rgt`** to avoid conflicting with ripgrep.
+  The full `redgit` command is unchanged. Update shell aliases and scripts accordingly.
+
+### ✨ Features
+
+- New `rgt llm` command group: show, list, set, and inspect LLM providers
+- `llm.model` from config is now passed to the Claude Code CLI (`--model`)
+
+### 🐛 Fixes
+
+- Default LLM timeout raised from 120s to 300s (large changesets no longer time out)
+- CLI provider timeouts now raise a clear error with a hint to increase `llm.timeout`
+- `rgt llm` chat calls now respect `llm.timeout` (previously unbounded)
+- CLI providers no longer inherit stdin (prevents hangs in non-interactive runs)
+
+---
+
 # 1.4.1
 
 **Release Date:** 2026-03-30

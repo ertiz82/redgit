@@ -76,7 +76,7 @@ def start_cmd(
                         save_webhook_state(port, pid)
                 else:
                     console.print("[yellow]No tunnel integration configured[/yellow]")
-                    console.print("Install one with: rg install ngrok")
+                    console.print("Install one with: rgt install ngrok")
                     save_webhook_state(port, pid)
             else:
                 save_webhook_state(port, pid)
@@ -85,7 +85,7 @@ def start_cmd(
             console.print(f"   Port: {port}")
             if public_url:
                 console.print(f"   URL: {public_url}")
-            console.print(f"   Stop with: rg webhook stop")
+            console.print(f"   Stop with: rgt webhook stop")
 
         except Exception as e:
             console.print(f"[red]Failed to start daemon: {e}[/red]")
@@ -115,7 +115,7 @@ def start_cmd(
                     console.print(f"[yellow]Tunnel warning: {e}[/yellow]")
             else:
                 console.print("[yellow]No tunnel integration configured[/yellow]")
-                console.print("Install one with: rg install ngrok")
+                console.print("Install one with: rgt install ngrok")
 
         console.print(f"\n[bold]Webhook server running on port {port}[/bold]")
         if not public_url:
@@ -241,7 +241,7 @@ def url_cmd(
 
     if not state or not state.get("running"):
         console.print("[yellow]Webhook server not running[/yellow]")
-        console.print("Start with: rg webhook start --ngrok")
+        console.print("Start with: rgt webhook start --ngrok")
         return
 
     base_url = state.get("public_url") or f"http://localhost:{state.get('port')}"

@@ -399,7 +399,7 @@ class NotificationService:
 
         lines.append("")
         lines.append(f"🆔 Session: <code>{session_id}</code>")
-        lines.append(f"💻 Join: <code>rg poker join {session_id}</code>")
+        lines.append(f"💻 Join: <code>rgt poker join {session_id}</code>")
 
         message = "\n".join(lines)
         return self.send("poker_session_started", message)

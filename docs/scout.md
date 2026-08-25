@@ -20,13 +20,13 @@ Scout analyzes your codebase using AI to understand the project structure, ident
 
 ```bash
 # Analyze current project
-rg scout
+rgt scout
 
 # Analyze specific directory
-rg scout src/
+rgt scout src/
 
 # Generate task breakdown for a feature
-rg scout --feature "add user authentication"
+rgt scout --feature "add user authentication"
 ```
 
 ---
@@ -37,36 +37,36 @@ rg scout --feature "add user authentication"
 
 ```bash
 # Quick project overview
-rg scout
+rgt scout
 
 # Detailed analysis
-rg scout --depth detailed
+rgt scout --depth detailed
 
 # Analyze specific directory
-rg scout src/api/
+rgt scout src/api/
 ```
 
 ### Feature Planning
 
 ```bash
 # Break down a feature into tasks
-rg scout --feature "add user authentication"
+rgt scout --feature "add user authentication"
 
 # With specific depth
-rg scout --feature "refactor database layer" --depth detailed
+rgt scout --feature "refactor database layer" --depth detailed
 ```
 
 ### Output Options
 
 ```bash
 # Save as JSON
-rg scout --format json -o analysis.json
+rgt scout --format json -o analysis.json
 
 # Save as Markdown
-rg scout --format markdown -o analysis.md
+rgt scout --format markdown -o analysis.md
 
 # Limit file count for large projects
-rg scout --max-files 100
+rgt scout --max-files 100
 ```
 
 ---
@@ -112,7 +112,7 @@ rg scout --max-files 100
 ### Text Format (Default)
 
 ```
-$ rg scout
+$ rgt scout
 
 🔍 Project Analysis: my-project
 
@@ -144,7 +144,7 @@ $ rg scout
 ### JSON Format
 
 ```bash
-rg scout --format json -o analysis.json
+rgt scout --format json -o analysis.json
 ```
 
 ```json
@@ -179,17 +179,17 @@ rg scout --format json -o analysis.json
 
 ```bash
 # Get task suggestions for next sprint
-rg scout --depth detailed
+rgt scout --depth detailed
 
 # Focus on specific area
-rg scout src/api/ --depth detailed
+rgt scout src/api/ --depth detailed
 ```
 
 ### Feature Implementation
 
 ```bash
 # Break down a feature before starting
-rg scout --feature "implement OAuth2 login"
+rgt scout --feature "implement OAuth2 login"
 
 # Output:
 # Feature: OAuth2 Login Implementation
@@ -207,17 +207,17 @@ rg scout --feature "implement OAuth2 login"
 
 ```bash
 # Analyze changes before review
-rg scout --depth quick
+rgt scout --depth quick
 
 # Check specific module
-rg scout src/payments/ --depth detailed
+rgt scout src/payments/ --depth detailed
 ```
 
 ### New Team Member Onboarding
 
 ```bash
 # Generate project overview
-rg scout --format markdown -o PROJECT_OVERVIEW.md
+rgt scout --format markdown -o PROJECT_OVERVIEW.md
 
 # Share with team member for quick understanding
 ```
@@ -230,10 +230,10 @@ Scout works with your configured task management integration:
 
 ```bash
 # Generate tasks and create in Jira
-rg scout --create-tasks
+rgt scout --create-tasks
 
 # Preview tasks without creating
-rg scout --create-tasks --dry-run
+rgt scout --create-tasks --dry-run
 ```
 
 When `--create-tasks` is used:
@@ -269,13 +269,13 @@ scout:
 Large projects may take longer. Try:
 ```bash
 # Limit files
-rg scout --max-files 100
+rgt scout --max-files 100
 
 # Use quick depth
-rg scout --depth quick
+rgt scout --depth quick
 
 # Analyze specific directory
-rg scout src/core/
+rgt scout src/core/
 ```
 
 ### "No tasks suggested"
@@ -283,10 +283,10 @@ rg scout src/core/
 This may happen with very clean or small projects:
 ```bash
 # Try detailed analysis
-rg scout --depth detailed
+rgt scout --depth detailed
 
 # Focus on feature planning instead
-rg scout --feature "add new feature X"
+rgt scout --feature "add new feature X"
 ```
 
 ### "LLM timeout"
@@ -294,10 +294,10 @@ rg scout --feature "add new feature X"
 For very large projects:
 ```bash
 # Reduce scope
-rg scout src/ --max-files 50
+rgt scout src/ --max-files 50
 
 # Check LLM configuration
-rg config show
+rgt config show
 ```
 
 ---

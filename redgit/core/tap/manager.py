@@ -386,7 +386,7 @@ class TapManager:
         if len(path_parts) >= 2:
             # Use repo name, removing common prefixes/suffixes
             name = path_parts[-1]
-            for prefix in ["redgit-", "rg-"]:
+            for prefix in ["redgit-", "rgt-", "rg-"]:
                 if name.startswith(prefix):
                     name = name[len(prefix):]
             for suffix in ["-tap", "-plugins", "-integrations"]:

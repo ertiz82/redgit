@@ -19,7 +19,7 @@ Place custom plugins in `.redgit/plugins/`:
 
 ## Framework Plugin
 
-Framework plugins provide auto-detection and custom prompts for `rg propose`.
+Framework plugins provide auto-detection and custom prompts for `rgt propose`.
 
 ### Basic Example
 
@@ -113,8 +113,8 @@ class DeployPlugin:
 
 Usage:
 ```bash
-rg deploy staging
-rg deploy production
+rgt deploy staging
+rgt deploy production
 ```
 
 ---

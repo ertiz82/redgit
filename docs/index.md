@@ -18,13 +18,13 @@ Welcome to the RedGit documentation. RedGit is an AI-powered Git workflow assist
 
 | Feature | Description | Command |
 |---------|-------------|---------|
-| [Scout](scout.md) | AI-powered project analysis | `rg scout` |
-| [Quality](quality.md) | Code quality with Semgrep | `rg quality` |
-| [CI/CD](ci.md) | Pipeline management | `rg ci` |
-| [Release](release.md) | Version & changelog | `rg release` |
-| [Notifications](notify.md) | Team notifications | `rg notify` |
-| [Planning Poker](planning-poker.md) | Sprint estimation | `rg poker` |
-| [Tunnel](tunnel.md) | Port forwarding | `rg tunnel` |
+| [Scout](scout.md) | AI-powered project analysis | `rgt scout` |
+| [Quality](quality.md) | Code quality with Semgrep | `rgt quality` |
+| [CI/CD](ci.md) | Pipeline management | `rgt ci` |
+| [Release](release.md) | Version & changelog | `rgt release` |
+| [Notifications](notify.md) | Team notifications | `rgt notify` |
+| [Planning Poker](planning-poker.md) | Sprint estimation | `rgt poker` |
+| [Tunnel](tunnel.md) | Port forwarding | `rgt tunnel` |
 
 ### Integrations & Plugins
 
@@ -50,25 +50,25 @@ Welcome to the RedGit documentation. RedGit is an AI-powered Git workflow assist
 ### Core Commands
 
 ```bash
-rg init      # Initialize RedGit in your project
-rg propose   # Analyze changes and create commits
-rg push      # Push branches and complete issues
-rg scout     # AI-powered project analysis and planning
+rgt init      # Initialize RedGit in your project
+rgt propose   # Analyze changes and create commits
+rgt push      # Push branches and complete issues
+rgt scout     # AI-powered project analysis and planning
 ```
 
 ### Core Features
 
 | Feature | Description | Command |
 |---------|-------------|---------|
-| AI Commit Grouping | Intelligently groups related file changes | `rg propose` |
-| Push & Complete | Push branches and transition issues to Done | `rg push` |
-| [Scout](scout.md) | AI-powered project analysis and task planning | `rg scout` |
-| [Quality](quality.md) | Code quality analysis with Semgrep + AI | `rg quality` |
-| [Release](release.md) | Create releases with changelog generation | `rg release` |
-| [CI/CD](ci.md) | Pipeline management and monitoring | `rg ci` |
-| [Notifications](notify.md) | Team communication and alerts | `rg notify` |
-| [Planning Poker](planning-poker.md) | Real-time sprint estimation | `rg poker` |
-| [Tunnel](tunnel.md) | Expose local ports for webhooks and remote access | `rg tunnel` |
+| AI Commit Grouping | Intelligently groups related file changes | `rgt propose` |
+| Push & Complete | Push branches and transition issues to Done | `rgt push` |
+| [Scout](scout.md) | AI-powered project analysis and task planning | `rgt scout` |
+| [Quality](quality.md) | Code quality analysis with Semgrep + AI | `rgt quality` |
+| [Release](release.md) | Create releases with changelog generation | `rgt release` |
+| [CI/CD](ci.md) | Pipeline management and monitoring | `rgt ci` |
+| [Notifications](notify.md) | Team communication and alerts | `rgt notify` |
+| [Planning Poker](planning-poker.md) | Real-time sprint estimation | `rgt poker` |
+| [Tunnel](tunnel.md) | Expose local ports for webhooks and remote access | `rgt tunnel` |
 
 ### Integration Types (from Tap)
 
@@ -123,23 +123,23 @@ All integrations are available from **[RedGit Tap](https://github.com/ertiz82/re
 
 ```bash
 # Task Management
-rg install jira
-rg install linear
+rgt install jira
+rgt install linear
 
 # Notifications
-rg install slack
-rg install discord
+rgt install slack
+rgt install discord
 
 # Code Hosting
-rg install github
-rg install gitlab
+rgt install github
+rgt install gitlab
 
 # CI/CD
-rg install github-actions
-rg install jenkins
+rgt install github-actions
+rgt install jenkins
 
 # List available
-rg integration list --all
+rgt integration list --all
 ```
 
 ---

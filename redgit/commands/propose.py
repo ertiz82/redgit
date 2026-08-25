@@ -52,9 +52,9 @@ def _show_recovery_info(backup_id: str, error: Exception):
     console.print(f"[red]Hata: {error}[/red]\n")
 
     console.print("[yellow]Working tree yedeği alındı. Geri yüklemek için:[/yellow]")
-    console.print(f"  [cyan]rg backup restore[/cyan]           # Son yedeği geri yükle")
-    console.print(f"  [cyan]rg backup restore {backup_id}[/cyan]  # Bu yedeği geri yükle")
-    console.print(f"  [cyan]rg backup list[/cyan]              # Tüm yedekleri listele")
+    console.print(f"  [cyan]rgt backup restore[/cyan]           # Son yedeği geri yükle")
+    console.print(f"  [cyan]rgt backup restore {backup_id}[/cyan]  # Bu yedeği geri yükle")
+    console.print(f"  [cyan]rgt backup list[/cyan]              # Tüm yedekleri listele")
 
     console.print("\n[yellow]Manuel düzeltme için:[/yellow]")
     console.print("  [dim]git status[/dim]                   # Mevcut durumu gör")
@@ -352,10 +352,10 @@ def _finalize_propose_session(
         console.print(f"\n[bold green]Created {len(branches)} commits for {len(issues)} issues[/bold green]")
         if strategy == "local-merge":
             console.print("[dim]All commits are merged to current branch.[/dim]")
-            console.print("[dim]Run 'rg push' to push to remote and complete issues[/dim]")
+            console.print("[dim]Run 'rgt push' to push to remote and complete issues[/dim]")
         else:
             console.print("[dim]Branches ready for push and PR creation.[/dim]")
-            console.print("[dim]Run 'rg push --pr' to push branches and create pull requests[/dim]")
+            console.print("[dim]Run 'rgt push --pr' to push branches and create pull requests[/dim]")
 
         # Send session summary notification
         _send_session_summary_notification(config, len(branches), len(issues))
@@ -480,7 +480,7 @@ def propose_cmd(
     backup_id = None
     try:
         command_args = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else ""
-        command_str = f"rg propose {command_args}"
+        command_str = f"rgt propose {command_args}"
         backup_id = backup_manager.create_backup(command_str, changes)
         console.print(f"[dim]Backup: {backup_id}[/dim]")
     except Exception as backup_error:
@@ -525,7 +525,7 @@ def propose_cmd(
 
     # Validate --subtasks requires either --task or --multi (after auto-enable logic)
     if subtasks and not task and not multi:
-        console.print("[red]Error: --subtasks requires --task flag (e.g., rg propose -t PROJ-123 --subtasks)[/red]")
+        console.print("[red]Error: --subtasks requires --task flag (e.g., rgt propose -t PROJ-123 --subtasks)[/red]")
         console.print("[dim]Tip: Use --staged -s for auto-matching with active tasks[/dim]")
         raise typer.Exit(1)
 
@@ -1363,8 +1363,8 @@ def _process_task_commit(
     Process all changes as a single commit linked to a specific task.
 
     This is triggered when --task flag is used:
-    rg propose --task 123
-    rg propose --task PROJ-123
+    rgt propose --task 123
+    rgt propose --task PROJ-123
     """
     workflow = config.get("workflow", {})
     strategy = workflow.get("strategy", "local-merge")
@@ -1470,7 +1470,7 @@ def _process_task_commit(
             _send_commit_notification(config, branch_name, issue_key, len(file_paths))
 
             console.print(f"\n[bold green]✅ All changes committed to {issue_key}[/bold green]")
-            console.print("[dim]Run 'rg push' to push to remote[/dim]")
+            console.print("[dim]Run 'rgt push' to push to remote[/dim]")
         else:
             console.print("[yellow]⚠️  No files to commit[/yellow]")
 
@@ -2671,10 +2671,10 @@ def _process_multi_task_mode(
     # 13. Show next steps
     console.print("\n[bold cyan]Next steps:[/bold cyan]")
     if workflow_strategy == "merge-request":
-        console.print("  [dim]• rg push --pr   - Push branches and create merge requests[/dim]")
+        console.print("  [dim]• rgt push --pr   - Push branches and create merge requests[/dim]")
     else:
-        console.print("  [dim]• rg push        - Push commits to remote[/dim]")
-    console.print("  [dim]• rg session     - View current session[/dim]")
+        console.print("  [dim]• rgt push        - Push commits to remote[/dim]")
+    console.print("  [dim]• rgt session     - View current session[/dim]")
 
 
 def _process_task_filtered_mode(

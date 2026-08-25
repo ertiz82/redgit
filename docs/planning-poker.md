@@ -28,7 +28,7 @@ Planning Poker (also known as Scrum Poker) is a consensus-based technique for es
 pip install redgit[poker]
 
 # Install a tunnel integration (for remote teams)
-rg install ngrok
+rgt install ngrok
 ```
 
 ## Quick Start
@@ -37,23 +37,23 @@ rg install ngrok
 
 ```bash
 # Start with active sprint tasks
-rg poker start --sprint active
+rgt poker start --sprint active
 
 # Start with specific issues
-rg poker start --issues PROJ-123,PROJ-124,PROJ-125
+rgt poker start --issues PROJ-123,PROJ-124,PROJ-125
 
 # Start with custom settings
-rg poker start --sprint active --port 8765
+rgt poker start --sprint active --port 8765
 ```
 
 ### Joining a Session (Participant)
 
 ```bash
 # Join via session ID
-rg poker join abc123
+rgt poker join abc123
 
 # Join via URL
-rg poker join https://abc123.ngrok.io
+rgt poker join https://abc123.ngrok.io
 ```
 
 ---
@@ -63,7 +63,7 @@ rg poker join https://abc123.ngrok.io
 ### 1. Leader Starts Session
 
 ```
-$ rg poker start --sprint active
+$ rgt poker start --sprint active
 
 Detected user: Mehmet
 
@@ -91,8 +91,8 @@ Session started!
    Public URL: https://abc123.ngrok.io
 
 Participants can join with:
-   rg poker join poker-abc123
-   rg poker join https://abc123.ngrok.io
+   rgt poker join poker-abc123
+   rgt poker join https://abc123.ngrok.io
 
 Waiting for participants (3 minimum)...
 ```
@@ -100,7 +100,7 @@ Waiting for participants (3 minimum)...
 ### 2. Participants Join
 
 ```
-$ rg poker join poker-abc123
+$ rgt poker join poker-abc123
 
 Detected user: Ahmet
 
@@ -375,7 +375,7 @@ When a notification integration is configured (Telegram, Slack, etc.):
 👥 Expected: Ahmet, Ayşe, Can
 
 🆔 Session: poker-abc123
-💻 Join: rg poker join poker-abc123
+💻 Join: rgt poker join poker-abc123
 ```
 
 ### Session Ended
@@ -439,15 +439,15 @@ For remote teams, use a tunnel integration:
 
 ```bash
 # Install a tunnel
-rg install ngrok      # Popular, free tier available
-rg install serveo     # No installation needed (uses SSH)
-rg install bore       # Fast, written in Rust
+rgt install ngrok      # Popular, free tier available
+rgt install serveo     # No installation needed (uses SSH)
+rgt install bore       # Fast, written in Rust
 
 # Configure
-rg integration configure ngrok
+rgt integration configure ngrok
 
 # Poker will automatically use the configured tunnel
-rg poker start --sprint active
+rgt poker start --sprint active
 ```
 
 See [Tunnel Documentation](tunnel.md) for more details.
@@ -471,19 +471,19 @@ The AI vote is displayed alongside human votes but leader makes final decision.
 
 ```bash
 # Start a session
-rg poker start [OPTIONS]
+rgt poker start [OPTIONS]
   --sprint, -s    Sprint ID or 'active'
   --issues, -i    Comma-separated issue keys
   --port, -p      Server port (default: 8765)
   --name, -n      Your name as leader
 
 # Join a session
-rg poker join <SESSION>
+rgt poker join <SESSION>
   SESSION         Session ID or URL
   --name, -n      Your name
 
 # Check status
-rg poker status
+rgt poker status
 ```
 
 ---
@@ -493,7 +493,7 @@ rg poker status
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Leader Terminal                          │
-│  rg poker start                                             │
+│  rgt poker start                                             │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  PokerSession (Server)                               │   │
 │  │  - WebSocket server                                  │   │
@@ -511,7 +511,7 @@ rg poker status
         ▼                  ▼                  ▼
 ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
 │ Participant 1 │  │ Participant 2 │  │ Participant 3 │
-│ rg poker join │  │ rg poker join │  │ rg poker join │
+│ rgt poker join │  │ rgt poker join │  │ rgt poker join │
 │               │  │               │  │               │
 │ WebSocket     │  │ WebSocket     │  │ WebSocket     │
 │ Client        │  │ Client        │  │ Client        │
@@ -582,14 +582,14 @@ pip install redgit[poker]
 
 Install and configure a tunnel:
 ```bash
-rg install ngrok
-rg integration configure ngrok
+rgt install ngrok
+rgt integration configure ngrok
 ```
 
 ### Connection Issues
 
 1. Check firewall settings
-2. Verify the tunnel is running: `rg tunnel status`
+2. Verify the tunnel is running: `rgt tunnel status`
 3. Try a different tunnel integration
 
 ### Participant can't join

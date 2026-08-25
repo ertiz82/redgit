@@ -24,19 +24,19 @@ Tunnel integrations allow you to expose local ports to the internet. This is use
 
 ```bash
 # Install a tunnel integration
-rg install ngrok
+rgt install ngrok
 
 # Configure it
-rg integration configure ngrok
+rgt integration configure ngrok
 
 # Start a tunnel
-rg tunnel start 8080
+rgt tunnel start 8080
 
 # Check status
-rg tunnel status
+rgt tunnel status
 
 # Stop the tunnel
-rg tunnel stop
+rgt tunnel stop
 ```
 
 ## Choosing a Tunnel
@@ -71,24 +71,24 @@ rg tunnel stop
 ### Start Tunnel
 
 ```bash
-rg tunnel start <PORT> [OPTIONS]
+rgt tunnel start <PORT> [OPTIONS]
   --region, -r    Server region (if supported)
 
 # Examples
-rg tunnel start 8080
-rg tunnel start 3000 --region eu
+rgt tunnel start 8080
+rgt tunnel start 3000 --region eu
 ```
 
 ### Stop Tunnel
 
 ```bash
-rg tunnel stop
+rgt tunnel stop
 ```
 
 ### Check Status
 
 ```bash
-rg tunnel status
+rgt tunnel status
 
 # Output:
 # Running
@@ -99,7 +99,7 @@ rg tunnel status
 ### Get URL
 
 ```bash
-rg tunnel url
+rgt tunnel url
 
 # Output:
 # https://abc123.ngrok.io
@@ -127,7 +127,7 @@ Tunnel integrations work with the webhook server:
 
 ```bash
 # Start webhook server with tunnel
-rg webhook start --ngrok
+rgt webhook start --ngrok
 
 # The tunnel URL is automatically configured
 ```
@@ -138,11 +138,11 @@ Poker sessions automatically use the configured tunnel:
 
 ```bash
 # Configure tunnel first
-rg install ngrok
-rg integration configure ngrok
+rgt install ngrok
+rgt integration configure ngrok
 
 # Start poker - tunnel is used automatically
-rg poker start --sprint active
+rgt poker start --sprint active
 ```
 
 ## API
@@ -199,8 +199,8 @@ if tunnel and tunnel.enabled:
 
 Install and configure a tunnel:
 ```bash
-rg install ngrok
-rg integration configure ngrok
+rgt install ngrok
+rgt integration configure ngrok
 ```
 
 ### Tunnel fails to start
@@ -214,19 +214,19 @@ rg integration configure ngrok
 
 2. Check if another tunnel is running:
    ```bash
-   rg tunnel stop
+   rgt tunnel stop
    ```
 
 3. Try a different tunnel:
    ```bash
-   rg install serveo  # No installation needed
+   rgt install serveo  # No installation needed
    ```
 
 ### URL not accessible
 
 1. Check firewall settings
 2. Verify the local port is listening
-3. Check tunnel status: `rg tunnel status`
+3. Check tunnel status: `rgt tunnel status`
 
 ## See Also
 

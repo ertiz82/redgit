@@ -4,10 +4,10 @@ CI/CD command for RedGit.
 Interacts with the active CI/CD integration (GitHub Actions, GitLab CI, Jenkins, etc.)
 
 Usage:
-    rg ci status              : Show CI/CD status overview
-    rg ci pipelines           : List recent pipelines/builds
-    rg ci trigger             : Trigger a new pipeline
-    rg ci logs <pipeline_id>  : View pipeline logs
+    rgt ci status              : Show CI/CD status overview
+    rgt ci pipelines           : List recent pipelines/builds
+    rgt ci trigger             : Trigger a new pipeline
+    rgt ci logs <pipeline_id>  : View pipeline logs
 """
 
 import typer
@@ -41,13 +41,13 @@ def _check_cicd():
             for name in available:
                 console.print(f"     [dim]- {name}[/dim]")
             console.print("")
-            console.print(f"   Install one: [cyan]rg install {available[0]}[/cyan]")
+            console.print(f"   Install one: [cyan]rgt install {available[0]}[/cyan]")
         else:
             console.print("   Install a CI/CD integration:")
-            console.print("     [cyan]rg install github-actions[/cyan]")
+            console.print("     [cyan]rgt install github-actions[/cyan]")
         console.print("")
         console.print("   Then set as active:")
-        console.print("     [cyan]rg integration use <name>[/cyan]")
+        console.print("     [cyan]rgt integration use <name>[/cyan]")
         raise typer.Exit(1)
     return cicd
 

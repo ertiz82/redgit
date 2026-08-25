@@ -9,7 +9,7 @@ that were previously scattered throughout the codebase.
 # TIMEOUT VALUES (seconds)
 # =============================================================================
 
-LLM_REQUEST_TIMEOUT = 120       # Default timeout for LLM API calls
+LLM_REQUEST_TIMEOUT = 300       # Default timeout for LLM API calls
 SEMGREP_TIMEOUT = 300           # Default timeout for Semgrep analysis
 GIT_OPERATION_TIMEOUT = 30      # Default timeout for git operations
 INTEGRATION_API_TIMEOUT = 10    # Default timeout for integration API calls

@@ -11,8 +11,8 @@ RedGit Release manages your project versions using semantic versioning (SemVer) 
 Enable the version and changelog plugins:
 
 ```bash
-rg plugin enable version
-rg plugin enable changelog
+rgt plugin enable version
+rgt plugin enable changelog
 ```
 
 ---
@@ -21,13 +21,13 @@ rg plugin enable changelog
 
 ```bash
 # Initialize versioning
-rg version init
+rgt version init
 
 # Create a release
-rg release minor
+rgt release minor
 
 # Generate changelog
-rg changelog generate
+rgt changelog generate
 ```
 
 ---
@@ -37,7 +37,7 @@ rg changelog generate
 ### Initialize Versioning
 
 ```bash
-rg version init
+rgt version init
 
 # Output:
 # Version plugin initialized
@@ -52,7 +52,7 @@ This creates:
 ### Show Current Version
 
 ```bash
-rg version show
+rgt version show
 
 # Output:
 # Current version: 1.2.3
@@ -64,15 +64,15 @@ rg version show
 
 ```bash
 # Bump patch (0.0.x) - bug fixes
-rg version release patch
+rgt version release patch
 # 1.2.3 → 1.2.4
 
 # Bump minor (0.x.0) - new features
-rg version release minor
+rgt version release minor
 # 1.2.3 → 1.3.0
 
 # Bump major (x.0.0) - breaking changes
-rg version release major
+rgt version release major
 # 1.2.3 → 2.0.0
 ```
 
@@ -80,19 +80,19 @@ rg version release major
 
 ## Release Command
 
-The `rg release` command is a shortcut for version releases:
+The `rgt release` command is a shortcut for version releases:
 
 ```bash
 # Bump and tag
-rg release patch     # 0.0.x - Bug fixes
-rg release minor     # 0.x.0 - New features
-rg release major     # x.0.0 - Breaking changes
+rgt release patch     # 0.0.x - Bug fixes
+rgt release minor     # 0.x.0 - New features
+rgt release major     # x.0.0 - Breaking changes
 
 # Tag current version (no bump)
-rg release current
+rgt release current
 
 # Force replace existing tag
-rg release patch --force
+rgt release patch --force
 ```
 
 ### What Release Does
@@ -117,7 +117,7 @@ rg release patch --force
 
 ```bash
 # Standard release
-rg release minor
+rgt release minor
 # → Bump 1.2.0 → 1.3.0
 # → Update CHANGELOG.md
 # → Commit "chore(release): v1.3.0"
@@ -125,13 +125,13 @@ rg release minor
 # → Push to remote
 
 # Release without push
-rg release patch --no-push
+rgt release patch --no-push
 
 # Release with custom message
-rg release major --message "Breaking: New API version"
+rgt release major --message "Breaking: New API version"
 
 # Just tag current version
-rg release current
+rgt release current
 ```
 
 ---
@@ -141,7 +141,7 @@ rg release current
 ### Initialize Changelog
 
 ```bash
-rg changelog init
+rgt changelog init
 
 # Creates CHANGELOG.md with template
 ```
@@ -150,23 +150,23 @@ rg changelog init
 
 ```bash
 # Generate from commits since last tag
-rg changelog generate
+rgt changelog generate
 
 # Generate for specific version range
-rg changelog generate --from v1.0.0 --to v1.1.0
+rgt changelog generate --from v1.0.0 --to v1.1.0
 
 # Preview without writing
-rg changelog generate --dry-run
+rgt changelog generate --dry-run
 ```
 
 ### Show Changelog
 
 ```bash
 # Show current changelog
-rg changelog show
+rgt changelog show
 
 # Show specific version
-rg changelog show --version 1.2.0
+rgt changelog show --version 1.2.0
 ```
 
 ### Changelog Format
@@ -270,10 +270,10 @@ plugins:
 git status
 
 # 2. Create release
-rg release minor
+rgt release minor
 
 # 3. Push with CI
-rg push --ci --wait-ci
+rgt push --ci --wait-ci
 
 # 4. Verify on GitHub/GitLab
 ```
@@ -282,7 +282,7 @@ rg push --ci --wait-ci
 
 ```bash
 # Create pre-release version
-rg version set 2.0.0-beta.1
+rgt version set 2.0.0-beta.1
 
 # Tag as pre-release
 git tag -a v2.0.0-beta.1 -m "Beta release"
@@ -293,7 +293,7 @@ git push --tags
 
 ```bash
 # On main branch after hotfix merge
-rg release patch
+rgt release patch
 
 # Output:
 # Version: 1.2.3 → 1.2.4
@@ -306,7 +306,7 @@ rg release patch
 
 ```bash
 # Just update changelog without version bump
-rg changelog generate
+rgt changelog generate
 
 # Commit changelog
 git add CHANGELOG.md
@@ -323,7 +323,7 @@ When pushing tags, RedGit can create GitHub releases:
 
 ```bash
 # Release with GitHub release notes
-rg release minor --github-release
+rgt release minor --github-release
 
 # Uses changelog entry as release notes
 ```
@@ -332,7 +332,7 @@ rg release minor --github-release
 
 ```bash
 # Release with GitLab release
-rg release minor --gitlab-release
+rgt release minor --gitlab-release
 ```
 
 ---
@@ -343,14 +343,14 @@ rg release minor --gitlab-release
 
 ```bash
 # Initialize versioning first
-rg version init
+rgt version init
 ```
 
 ### "Tag already exists"
 
 ```bash
 # Force replace tag
-rg release patch --force
+rgt release patch --force
 
 # Or delete tag first
 git tag -d v1.2.3

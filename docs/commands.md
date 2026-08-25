@@ -1,17 +1,17 @@
 # Commands Reference
 
-Complete reference for all RedGit CLI commands. Use either `redgit` or the short alias `rg`.
+Complete reference for all RedGit CLI commands. Use either `redgit` or the short alias `rgt`.
 
 ---
 
 ## Core Commands
 
-### `rg init`
+### `rgt init`
 
 Initialize RedGit in your project. Creates `.redgit/config.yaml`.
 
 ```bash
-rg init
+rgt init
 ```
 
 Interactive wizard configures:
@@ -22,38 +22,38 @@ Interactive wizard configures:
 
 ---
 
-### `rg propose`
+### `rgt propose`
 
 Analyze changes and create commits using AI.
 
 ```bash
 # Basic usage - AI analyzes and groups changes
-rg propose
+rgt propose
 
 # With specific prompt/plugin
-rg propose -p laravel
+rgt propose -p laravel
 
 # Skip task management
-rg propose --no-task
+rgt propose --no-task
 
 # Task-Filtered Mode: Smart subtask creation under parent task
-rg propose -t PROJ-123
-rg propose --task 858
+rgt propose -t PROJ-123
+rgt propose --task 858
 
 # Dry-run: See what would happen without making changes
-rg propose --dry-run
-rg propose -n
+rgt propose --dry-run
+rgt propose -n
 
 # Verbose mode: Show prompts, AI responses, and debug info
-rg propose --verbose
-rg propose -v
+rgt propose --verbose
+rgt propose -v
 
 # Detailed mode: Generate better messages using file diffs
-rg propose --detailed
-rg propose -d
+rgt propose --detailed
+rgt propose -d
 
 # Combine flags for debugging
-rg propose -v -n -d
+rgt propose -v -n -d
 ```
 
 **Options:**
@@ -72,7 +72,7 @@ rg propose -v -n -d
 Preview what RedGit would do without making any changes:
 
 ```bash
-rg propose -n
+rgt propose -n
 ```
 
 Shows:
@@ -86,7 +86,7 @@ Shows:
 Show detailed information about the AI analysis process:
 
 ```bash
-rg propose -v
+rgt propose -v
 ```
 
 Displays:
@@ -101,7 +101,7 @@ Displays:
 Generate more accurate commit messages by analyzing actual file diffs:
 
 ```bash
-rg propose -d
+rgt propose -d
 ```
 
 Benefits:
@@ -115,10 +115,10 @@ Smart subtask creation mode that analyzes file relevance to a parent task:
 
 ```bash
 # Explicit task ID
-rg propose -t PROJ-123
+rgt propose -t PROJ-123
 
 # Just the number (project key added automatically)
-rg propose -t 123
+rgt propose -t 123
 ```
 
 **How it works:**
@@ -133,37 +133,37 @@ rg propose -t 123
 
 **Auto-detection from branch:**
 
-When on a task branch (e.g., `feature/PROJ-123-some-work`), running `rg propose` will:
+When on a task branch (e.g., `feature/PROJ-123-some-work`), running `rgt propose` will:
 1. Detect the task ID from the branch name
 2. Ask if you want to use task-filtered mode
 
 ---
 
-### `rg push`
+### `rgt push`
 
 Push branches and complete issues.
 
 ```bash
 # Push current branch
-rg push
+rgt push
 
 # Push with specific issue
-rg push -i PROJ-123
+rgt push -i PROJ-123
 
 # Create pull request
-rg push --pr
+rgt push --pr
 
 # Don't complete issues
-rg push --no-complete
+rgt push --no-complete
 
 # Trigger CI/CD pipeline after push
-rg push --ci
+rgt push --ci
 
 # Wait for CI/CD pipeline to complete
-rg push --ci --wait-ci
+rgt push --ci --wait-ci
 
 # Push without triggering CI
-rg push --no-ci
+rgt push --no-ci
 ```
 
 **Options:**
@@ -185,99 +185,99 @@ Detailed documentation for feature commands:
 
 | Command | Description | Documentation |
 |---------|-------------|---------------|
-| `rg scout` | AI-powered project analysis | [Scout](scout.md) |
-| `rg quality` | Code quality with Semgrep | [Quality](quality.md) |
-| `rg ci` | CI/CD pipeline management | [CI/CD](ci.md) |
-| `rg release` | Version & changelog management | [Release](release.md) |
-| `rg notify` | Send notifications | [Notifications](notify.md) |
-| `rg poker` | Planning Poker sessions | [Planning Poker](planning-poker.md) |
-| `rg tunnel` | Expose local ports | [Tunnel](tunnel.md) |
+| `rgt scout` | AI-powered project analysis | [Scout](scout.md) |
+| `rgt quality` | Code quality with Semgrep | [Quality](quality.md) |
+| `rgt ci` | CI/CD pipeline management | [CI/CD](ci.md) |
+| `rgt release` | Version & changelog management | [Release](release.md) |
+| `rgt notify` | Send notifications | [Notifications](notify.md) |
+| `rgt poker` | Planning Poker sessions | [Planning Poker](planning-poker.md) |
+| `rgt tunnel` | Expose local ports | [Tunnel](tunnel.md) |
 
 ---
 
 ## Utility Commands
 
-### `rg config`
+### `rgt config`
 
 Manage configuration.
 
 ```bash
 # Show current config
-rg config show
+rgt config show
 
 # Set a value
-rg config set llm.provider ollama
-rg config set workflow.strategy merge-request
+rgt config set llm.provider ollama
+rgt config set workflow.strategy merge-request
 
 # Get a value
-rg config get llm.provider
+rgt config get llm.provider
 ```
 
 See [Configuration](configuration.md) for all options.
 
 ---
 
-### `rg install`
+### `rgt install`
 
 Install integration or plugin from RedGit Tap.
 
 ```bash
 # Install integration
-rg install jira
-rg install slack
+rgt install jira
+rgt install slack
 
 # Install plugin
-rg install plugin:laravel
+rgt install plugin:laravel
 
 # Install specific version
-rg install slack@v1.0.0
+rgt install slack@v1.0.0
 
 # Skip configuration wizard
-rg install slack --no-configure
+rgt install slack --no-configure
 ```
 
 See [RedGit Tap](tap.md) for available integrations.
 
 ---
 
-### `rg integration`
+### `rgt integration`
 
 Manage installed integrations.
 
 ```bash
 # List installed integrations
-rg integration list
+rgt integration list
 
 # List all available from taps
-rg integration list --all
+rgt integration list --all
 
 # Reconfigure an integration
-rg integration configure jira
+rgt integration configure jira
 
 # Set active integration for its type
-rg integration use linear
+rgt integration use linear
 
 # Remove an integration
-rg integration remove jira
+rgt integration remove jira
 ```
 
 See [Integrations](integrations/index.md) for more details.
 
 ---
 
-### `rg plugin`
+### `rgt plugin`
 
 Manage plugins.
 
 ```bash
 # List available plugins
-rg plugin list
+rgt plugin list
 
 # Enable a plugin
-rg plugin enable laravel
+rgt plugin enable laravel
 
 # Disable a plugin
-rg plugin disable laravel
+rgt plugin disable laravel
 ```
 
 See [Plugins](plugins/index.md) for available plugins.
@@ -305,49 +305,49 @@ These options work with most commands:
 ```bash
 # Start your day
 cd my-project
-rg integration list      # Check integrations
+rgt integration list      # Check integrations
 
 # Make changes...
 
 # Commit with AI grouping
-rg propose
+rgt propose
 
 # Push when ready
-rg push
+rgt push
 ```
 
 ### Team Workflow with PRs
 
 ```bash
 # Configure merge-request strategy
-rg config set workflow.strategy merge-request
+rgt config set workflow.strategy merge-request
 
 # Make changes...
-rg propose
+rgt propose
 
 # Push and create PRs
-rg push --pr
+rgt push --pr
 ```
 
 ### Quick Commit to Specific Task
 
 ```bash
 # All changes go to one task as subtasks
-rg propose --task PROJ-123
-rg push
+rgt propose --task PROJ-123
+rgt push
 ```
 
 ### Release Workflow
 
 ```bash
 # Bump version and tag
-rg release minor
+rgt release minor
 
 # Generate changelog
-rg changelog generate
+rgt changelog generate
 
 # Push with CI
-rg push --ci --wait-ci
+rgt push --ci --wait-ci
 ```
 
 ---

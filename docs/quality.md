@@ -22,46 +22,46 @@ RedGit Quality combines AI-powered code review with Semgrep static analysis to c
 
 ```bash
 # Check staged changes
-rg quality check
+rgt quality check
 
 # Check specific commit
-rg quality check --commit HEAD
+rgt quality check --commit HEAD
 
 # Full project scan
-rg quality scan
+rgt quality scan
 
 # Show current settings
-rg quality status
+rgt quality status
 ```
 
 ---
 
 ## Commands
 
-### rg quality check
+### rgt quality check
 
 Analyze git changes (staged, commits, branches).
 
 ```bash
 # Check staged changes (default)
-rg quality check
+rgt quality check
 
 # Check specific commit
-rg quality check --commit HEAD
-rg quality check -c abc123
+rgt quality check --commit HEAD
+rgt quality check -c abc123
 
 # Compare branch with main
-rg quality check --branch feature/my-feature
-rg quality check -b feature/my-feature
+rgt quality check --branch feature/my-feature
+rgt quality check -b feature/my-feature
 
 # With quality threshold
-rg quality check --threshold 80
+rgt quality check --threshold 80
 
 # Verbose output
-rg quality check -v
+rgt quality check -v
 
 # Save report
-rg quality check --format json -o report.json
+rgt quality check --format json -o report.json
 ```
 
 **Options:**
@@ -75,28 +75,28 @@ rg quality check --format json -o report.json
 | `--output` | `-o` | Save report to file | - |
 | `--format` | `-f` | Output format: text, json | text |
 
-### rg quality scan
+### rgt quality scan
 
 Full project scan with Semgrep (not just git changes).
 
 ```bash
 # Scan current directory
-rg quality scan
+rgt quality scan
 
 # Scan specific directory
-rg quality scan src/
+rgt quality scan src/
 
 # Use specific rule pack
-rg quality scan -c p/security-audit
+rgt quality scan -c p/security-audit
 
 # Filter by severity
-rg quality scan -s ERROR,WARNING
+rgt quality scan -s ERROR,WARNING
 
 # Export as JSON
-rg quality scan -o report.json -f json
+rgt quality scan -o report.json -f json
 
 # Verbose with suggestions
-rg quality scan -v
+rgt quality scan -v
 ```
 
 **Options:**
@@ -109,12 +109,12 @@ rg quality scan -v
 | `--format` | `-f` | Output format: text, json | text |
 | `--verbose` | `-v` | Show detailed output | false |
 
-### rg quality status
+### rgt quality status
 
 Show quality settings and Semgrep status.
 
 ```bash
-rg quality status
+rgt quality status
 
 # Output:
 # Quality Settings
@@ -123,14 +123,14 @@ rg quality status
 #   Threshold: 70
 ```
 
-### rg quality report
+### rgt quality report
 
 Generate comprehensive quality report.
 
 ```bash
-rg quality report
-rg quality report --format json -o report.json
-rg quality report --format markdown -o QUALITY.md
+rgt quality report
+rgt quality report --format json -o report.json
+rgt quality report --format markdown -o QUALITY.md
 ```
 
 ---
@@ -141,35 +141,35 @@ rg quality report --format markdown -o QUALITY.md
 
 ```bash
 # Enable Semgrep (installs if needed)
-rg config semgrep --enable
+rgt config semgrep --enable
 
 # Disable Semgrep
-rg config semgrep --disable
+rgt config semgrep --disable
 
 # Check status
-rg config semgrep
+rgt config semgrep
 ```
 
 ### Manage Rule Packs
 
 ```bash
 # Add rule packs
-rg config semgrep --add p/security-audit
-rg config semgrep --add p/python
-rg config semgrep --add p/javascript
+rgt config semgrep --add p/security-audit
+rgt config semgrep --add p/python
+rgt config semgrep --add p/javascript
 
 # Remove rule pack
-rg config semgrep --remove auto
+rgt config semgrep --remove auto
 
 # List available rule packs
-rg config semgrep --list-rules
+rgt config semgrep --list-rules
 ```
 
 ### Install Semgrep
 
 ```bash
 # Install Semgrep binary
-rg config semgrep --install
+rgt config semgrep --install
 ```
 
 ---
@@ -237,7 +237,7 @@ quality:
 ### Quality Check
 
 ```
-$ rg quality check
+$ rgt quality check
 
 🔍 Analyzing staged changes...
 
@@ -263,7 +263,7 @@ $ rg quality check
 ### Full Scan
 
 ```
-$ rg quality scan
+$ rgt quality scan
 
 🔍 Scanning project with Semgrep...
 
@@ -293,11 +293,11 @@ Summary: 2 errors, 5 warnings, 12 info
 
 ### Pre-commit Quality Check
 
-Quality check runs automatically on `rg propose`:
+Quality check runs automatically on `rgt propose`:
 
 ```bash
 # Propose will run quality check first
-rg propose
+rgt propose
 
 # If quality fails, you'll see:
 # ⚠️  Quality check failed (score: 45/70)
@@ -308,17 +308,17 @@ rg propose
 
 ```bash
 # Skip quality check on propose
-rg propose --skip-quality
+rgt propose --skip-quality
 ```
 
 ### CI Integration
 
 ```bash
 # Run in CI pipeline
-rg quality check --format json -o quality-report.json
+rgt quality check --format json -o quality-report.json
 
 # Fail if below threshold
-rg quality check --threshold 80 || exit 1
+rgt quality check --threshold 80 || exit 1
 ```
 
 ---
@@ -329,7 +329,7 @@ rg quality check --threshold 80 || exit 1
 
 ```bash
 # Install Semgrep
-rg config semgrep --install
+rgt config semgrep --install
 
 # Or manually
 pip install semgrep
@@ -355,18 +355,18 @@ quality:
 
 ```bash
 # Adjust severity
-rg quality scan -s ERROR
+rgt quality scan -s ERROR
 
 # Use specific rule packs instead of auto
-rg config semgrep --remove auto
-rg config semgrep --add p/security-audit
+rgt config semgrep --remove auto
+rgt config semgrep --add p/security-audit
 ```
 
 ### "AI review not working"
 
 Check LLM configuration:
 ```bash
-rg config show
+rgt config show
 # Ensure llm.provider is configured
 ```
 

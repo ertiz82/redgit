@@ -623,7 +623,7 @@ class TestGenerateReadme:
         )
 
         assert "## Installation" in readme
-        assert "rg integration install my_service" in readme
+        assert "rgt integration install my_service" in readme
 
     def test_contains_configuration_section(self):
         """Contains configuration examples."""
@@ -645,7 +645,7 @@ class TestGenerateReadme:
         )
 
         assert "## Usage" in readme
-        assert "rg my_service status" in readme
+        assert "rgt my_service status" in readme
 
 
 class TestGeneratePromptTemplates:

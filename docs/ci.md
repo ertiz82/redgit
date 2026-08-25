@@ -11,25 +11,25 @@ RedGit integrates with popular CI/CD platforms to provide unified pipeline manag
 Install a CI/CD integration:
 
 ```bash
-rg install github-actions
+rgt install github-actions
 # or
-rg install gitlab-ci
+rgt install gitlab-ci
 # or
-rg install jenkins
+rgt install jenkins
 ```
 
 ## Supported Platforms
 
 | Platform | Integration | Install Command |
 |----------|-------------|-----------------|
-| GitHub Actions | github-actions | `rg install github-actions` |
-| GitLab CI | gitlab-ci | `rg install gitlab-ci` |
-| Jenkins | jenkins | `rg install jenkins` |
-| CircleCI | circleci | `rg install circleci` |
-| Travis CI | travis-ci | `rg install travis-ci` |
-| Azure Pipelines | azure-pipelines | `rg install azure-pipelines` |
-| Bitbucket Pipelines | bitbucket-pipelines | `rg install bitbucket-pipelines` |
-| Drone CI | drone-ci | `rg install drone-ci` |
+| GitHub Actions | github-actions | `rgt install github-actions` |
+| GitLab CI | gitlab-ci | `rgt install gitlab-ci` |
+| Jenkins | jenkins | `rgt install jenkins` |
+| CircleCI | circleci | `rgt install circleci` |
+| Travis CI | travis-ci | `rgt install travis-ci` |
+| Azure Pipelines | azure-pipelines | `rgt install azure-pipelines` |
+| Bitbucket Pipelines | bitbucket-pipelines | `rgt install bitbucket-pipelines` |
+| Drone CI | drone-ci | `rgt install drone-ci` |
 
 ---
 
@@ -37,28 +37,28 @@ rg install jenkins
 
 ```bash
 # Check pipeline status
-rg ci status
+rgt ci status
 
 # List recent pipelines
-rg ci pipelines
+rgt ci pipelines
 
 # Trigger a new build
-rg ci trigger
+rgt ci trigger
 
 # Watch pipeline progress
-rg ci watch
+rgt ci watch
 ```
 
 ---
 
 ## Commands
 
-### rg ci status
+### rgt ci status
 
 Show current CI/CD status for the branch.
 
 ```bash
-rg ci status
+rgt ci status
 
 # Output:
 # Branch: feature/new-login
@@ -68,22 +68,22 @@ rg ci status
 # Jobs: 3/5 completed
 ```
 
-### rg ci pipelines
+### rgt ci pipelines
 
 List recent pipelines.
 
 ```bash
 # List recent pipelines
-rg ci pipelines
+rgt ci pipelines
 
 # Filter by branch
-rg ci pipelines --branch main
+rgt ci pipelines --branch main
 
 # Filter by status
-rg ci pipelines --status failed
+rgt ci pipelines --status failed
 
 # Limit results
-rg ci pipelines --limit 20
+rgt ci pipelines --limit 20
 ```
 
 **Options:**
@@ -94,13 +94,13 @@ rg ci pipelines --limit 20
 | `--status` | `-s` | Filter: running, passed, failed | all |
 | `--limit` | `-l` | Number of results | 10 |
 
-### rg ci pipeline
+### rgt ci pipeline
 
 Show details for a specific pipeline.
 
 ```bash
 # Show pipeline details
-rg ci pipeline 12345
+rgt ci pipeline 12345
 
 # Output:
 # Pipeline #12345
@@ -115,12 +115,12 @@ rg ci pipeline 12345
 #   ✓ deploy (0m 35s)
 ```
 
-### rg ci jobs
+### rgt ci jobs
 
 List jobs in a pipeline.
 
 ```bash
-rg ci jobs 12345
+rgt ci jobs 12345
 
 # Output:
 # Pipeline #12345 Jobs
@@ -132,22 +132,22 @@ rg ci jobs 12345
 #   notify      ○ pending   -
 ```
 
-### rg ci trigger
+### rgt ci trigger
 
 Trigger a new pipeline.
 
 ```bash
 # Trigger on current branch
-rg ci trigger
+rgt ci trigger
 
 # Trigger on specific branch
-rg ci trigger --branch main
+rgt ci trigger --branch main
 
 # Trigger specific workflow
-rg ci trigger --workflow build
+rgt ci trigger --workflow build
 
 # With variables
-rg ci trigger --var DEPLOY_ENV=staging
+rgt ci trigger --var DEPLOY_ENV=staging
 ```
 
 **Options:**
@@ -158,19 +158,19 @@ rg ci trigger --var DEPLOY_ENV=staging
 | `--workflow` | `-w` | Specific workflow/job |
 | `--var` | | Pipeline variable (KEY=value) |
 
-### rg ci watch
+### rgt ci watch
 
 Watch a pipeline until completion.
 
 ```bash
 # Watch latest pipeline on current branch
-rg ci watch
+rgt ci watch
 
 # Watch specific pipeline
-rg ci watch 12345
+rgt ci watch 12345
 
 # With refresh interval
-rg ci watch --interval 10
+rgt ci watch --interval 10
 ```
 
 **Output:**
@@ -185,22 +185,22 @@ Watching Pipeline #12345...
 Elapsed: 2m 57s | Refresh: 5s | Ctrl+C to exit
 ```
 
-### rg ci logs
+### rgt ci logs
 
 View pipeline or job logs.
 
 ```bash
 # View pipeline logs
-rg ci logs 12345
+rgt ci logs 12345
 
 # View specific job logs
-rg ci logs 12345 --job build
+rgt ci logs 12345 --job build
 
 # Tail logs (last N lines)
-rg ci logs 12345 --job test --tail 100
+rgt ci logs 12345 --job test --tail 100
 
 # Follow logs in real-time
-rg ci logs 12345 --job deploy --follow
+rgt ci logs 12345 --job deploy --follow
 ```
 
 **Options:**
@@ -211,26 +211,26 @@ rg ci logs 12345 --job deploy --follow
 | `--tail` | `-n` | Last N lines |
 | `--follow` | `-f` | Follow logs in real-time |
 
-### rg ci cancel
+### rgt ci cancel
 
 Cancel a running pipeline.
 
 ```bash
-rg ci cancel 12345
+rgt ci cancel 12345
 
 # Output:
 # Pipeline #12345 cancelled
 ```
 
-### rg ci retry
+### rgt ci retry
 
 Retry a failed pipeline.
 
 ```bash
-rg ci retry 12345
+rgt ci retry 12345
 
 # Retry specific job
-rg ci retry 12345 --job deploy
+rgt ci retry 12345 --job deploy
 
 # Output:
 # Pipeline #12345 retried
@@ -245,21 +245,21 @@ rg ci retry 12345 --job deploy
 
 ```bash
 # Push and trigger CI
-rg push --ci
+rgt push --ci
 
 # Push, trigger, and wait for completion
-rg push --ci --wait-ci
+rgt push --ci --wait-ci
 
 # Push without triggering CI
-rg push --no-ci
+rgt push --no-ci
 ```
 
 ### Watch After Push
 
 ```bash
 # Push and watch
-rg push --ci
-rg ci watch
+rgt push --ci
+rgt ci watch
 ```
 
 ---
@@ -273,44 +273,44 @@ rg ci watch
 vim src/feature.py
 
 # Commit
-rg propose
+rgt propose
 
 # Push and monitor
-rg push --ci
-rg ci watch
+rgt push --ci
+rgt ci watch
 ```
 
 ### Handling Failures
 
 ```bash
 # Check what failed
-rg ci status
+rgt ci status
 # Status: failed
 
 # View failed job logs
-rg ci logs 12345 --job test --tail 50
+rgt ci logs 12345 --job test --tail 50
 
 # Fix the issue
 vim src/broken_test.py
 
 # Commit fix
-rg propose
+rgt propose
 
 # Push and retry
-rg push --ci
+rgt push --ci
 ```
 
 ### Deploy Workflow
 
 ```bash
 # Trigger deployment
-rg ci trigger --workflow deploy --var DEPLOY_ENV=production
+rgt ci trigger --workflow deploy --var DEPLOY_ENV=production
 
 # Watch deployment
-rg ci watch
+rgt ci watch
 
 # Check logs if issues
-rg ci logs --job deploy --follow
+rgt ci logs --job deploy --follow
 ```
 
 ---
@@ -345,7 +345,7 @@ Combine with notification integrations:
 
 ```bash
 # Get notified when pipeline completes
-rg push --ci --wait-ci
+rgt push --ci --wait-ci
 
 # On completion, notification is sent automatically
 # if notification integration is configured
@@ -361,20 +361,20 @@ See [Notifications](notify.md) for setup.
 
 ```bash
 # Install an integration
-rg install github-actions
+rgt install github-actions
 
 # Configure
-rg integration configure github-actions
+rgt integration configure github-actions
 ```
 
 ### "Pipeline not found"
 
 ```bash
 # List available pipelines
-rg ci pipelines --limit 20
+rgt ci pipelines --limit 20
 
 # Check branch
-rg ci pipelines --branch main
+rgt ci pipelines --branch main
 ```
 
 ### "Cannot trigger pipeline"
@@ -382,10 +382,10 @@ rg ci pipelines --branch main
 Check permissions:
 ```bash
 # Verify integration status
-rg integration list
+rgt integration list
 
 # Reconfigure if needed
-rg integration configure github-actions
+rgt integration configure github-actions
 ```
 
 ### "Logs not available"
@@ -393,7 +393,7 @@ rg integration configure github-actions
 Some platforms have log retention limits:
 ```bash
 # Check pipeline age
-rg ci pipeline 12345
+rgt ci pipeline 12345
 
 # Logs may expire after 30-90 days
 ```
@@ -403,6 +403,6 @@ rg ci pipeline 12345
 ## See Also
 
 - [Commands Reference](commands.md)
-- [Push Command](commands.md#rg-push)
+- [Push Command](commands.md#rgt-push)
 - [Notifications](notify.md)
 - [Quality Checks](quality.md)

@@ -2,15 +2,15 @@
 Scout CLI commands - AI-powered project analysis and task planning.
 
 Commands:
-- rg scout analyze       : Analyze project structure
-- rg scout show          : Show current analysis
-- rg scout plan          : Generate task plan from analysis
-- rg scout sync          : Sync tasks to task management system
-- rg scout team          : Show team configuration
-- rg scout team-init     : Initialize team from task management
-- rg scout assign        : Auto-assign tasks to team
-- rg scout timeline      : Show project timeline
-- rg scout changes       : Analyze changed files and match to tasks
+- rgt scout analyze       : Analyze project structure
+- rgt scout show          : Show current analysis
+- rgt scout plan          : Generate task plan from analysis
+- rgt scout sync          : Sync tasks to task management system
+- rgt scout team          : Show team configuration
+- rgt scout team-init     : Initialize team from task management
+- rgt scout assign        : Auto-assign tasks to team
+- rgt scout timeline      : Show project timeline
+- rgt scout changes       : Analyze changed files and match to tasks
 """
 
 import typer
@@ -62,7 +62,7 @@ def analyze_cmd(
         console.print("[yellow]Analysis already exists.[/yellow]")
         console.print(f"[dim]Last analyzed: {existing.get('_meta', {}).get('analyzed_at', 'unknown')}[/dim]")
         if not typer.confirm("Re-analyze?", default=False):
-            console.print("[dim]Use 'rg scout show' to view existing analysis[/dim]")
+            console.print("[dim]Use 'rgt scout show' to view existing analysis[/dim]")
             return
 
     console.print(f"\n[bold cyan]🔍 Analyzing project...[/bold cyan]\n")
@@ -79,8 +79,8 @@ def analyze_cmd(
         _show_analysis_summary(analysis)
 
         console.print("\n[dim]Full analysis saved to .redgit/scout.yaml[/dim]")
-        console.print("[dim]Run 'rg scout show' to view details[/dim]")
-        console.print("[dim]Run 'rg scout plan' to generate task plan[/dim]")
+        console.print("[dim]Run 'rgt scout show' to view details[/dim]")
+        console.print("[dim]Run 'rgt scout plan' to generate task plan[/dim]")
 
     except Exception as e:
         console.print(f"[red]Analysis failed: {e}[/red]")
@@ -97,7 +97,7 @@ def show_cmd(
     analysis = scout.get_analysis()
     if not analysis:
         console.print("[yellow]No analysis found.[/yellow]")
-        console.print("[dim]Run 'rg scout analyze' first[/dim]")
+        console.print("[dim]Run 'rgt scout analyze' first[/dim]")
         raise typer.Exit(1)
 
     if section:
@@ -120,14 +120,14 @@ def plan_cmd(
         console.print("[yellow]Plan already exists.[/yellow]")
         console.print(f"[dim]{len(existing)} tasks generated[/dim]")
         if not typer.confirm("Regenerate plan?", default=False):
-            console.print("[dim]Use 'rg scout show-plan' to view existing plan[/dim]")
+            console.print("[dim]Use 'rgt scout show-plan' to view existing plan[/dim]")
             return
 
     # Check analysis exists
     analysis = scout.get_analysis()
     if not analysis:
         console.print("[yellow]No analysis found.[/yellow]")
-        console.print("[dim]Run 'rg scout analyze' first[/dim]")
+        console.print("[dim]Run 'rgt scout analyze' first[/dim]")
         raise typer.Exit(1)
 
     console.print(f"\n[bold cyan]📋 Generating task plan...[/bold cyan]\n")
@@ -156,7 +156,7 @@ def plan_cmd(
         console.print("\n[dim]Full plan saved to .redgit/scout-plan.yaml[/dim]")
 
         if scout.task_management:
-            console.print(f"[dim]Run 'rg scout sync' to create tasks in {scout.task_management}[/dim]")
+            console.print(f"[dim]Run 'rgt scout sync' to create tasks in {scout.task_management}[/dim]")
 
     except Exception as e:
         console.print(f"[red]Plan generation failed: {e}[/red]")
@@ -171,7 +171,7 @@ def show_plan_cmd():
     tasks = scout.get_plan()
     if not tasks:
         console.print("[yellow]No plan found.[/yellow]")
-        console.print("[dim]Run 'rg scout plan' first[/dim]")
+        console.print("[dim]Run 'rgt scout plan' first[/dim]")
         raise typer.Exit(1)
 
     _show_full_plan(tasks)
@@ -195,7 +195,7 @@ def sync_cmd(
     tasks = scout.get_plan()
     if not tasks:
         console.print("[yellow]No plan found.[/yellow]")
-        console.print("[dim]Run 'rg scout plan' first[/dim]")
+        console.print("[dim]Run 'rgt scout plan' first[/dim]")
         raise typer.Exit(1)
 
     # Check for already synced tasks
@@ -431,7 +431,7 @@ def team_cmd():
     team_mgr = TeamManager()
     if not team_mgr.load():
         console.print("[yellow]No team configuration found.[/yellow]")
-        console.print("[dim]Run 'rg scout team-init' to create from task management[/dim]")
+        console.print("[dim]Run 'rgt scout team-init' to create from task management[/dim]")
         console.print("[dim]Or create .redgit/team.yaml manually[/dim]")
         raise typer.Exit(1)
 
@@ -539,7 +539,7 @@ def team_init_cmd():
     # Save
     team_mgr.save()
     console.print(f"\n[green]✓ Team configuration saved to {team_mgr.config_path}[/green]")
-    console.print("[dim]Run 'rg scout team' to view[/dim]")
+    console.print("[dim]Run 'rgt scout team' to view[/dim]")
 
 
 @scout_app.command("assign")
@@ -555,13 +555,13 @@ def assign_cmd(
     tasks = scout.get_plan()
     if not tasks:
         console.print("[yellow]No plan found.[/yellow]")
-        console.print("[dim]Run 'rg scout plan' first[/dim]")
+        console.print("[dim]Run 'rgt scout plan' first[/dim]")
         raise typer.Exit(1)
 
     team_mgr = TeamManager()
     if not team_mgr.load():
         console.print("[yellow]No team configuration found.[/yellow]")
-        console.print("[dim]Run 'rg scout team-init' first[/dim]")
+        console.print("[dim]Run 'rgt scout team-init' first[/dim]")
         raise typer.Exit(1)
 
     console.print(f"\n[bold cyan]Auto-assigning tasks...[/bold cyan]\n")
@@ -615,7 +615,7 @@ def timeline_cmd():
     tasks = scout.get_plan()
     if not tasks:
         console.print("[yellow]No plan found.[/yellow]")
-        console.print("[dim]Run 'rg scout plan' first[/dim]")
+        console.print("[dim]Run 'rgt scout plan' first[/dim]")
         raise typer.Exit(1)
 
     timeline = scout.calculate_timeline(tasks)
@@ -673,7 +673,7 @@ def sprints_cmd(
     tasks = scout.get_plan()
     if not tasks:
         console.print("[yellow]No plan found.[/yellow]")
-        console.print("[dim]Run 'rg scout plan' first[/dim]")
+        console.print("[dim]Run 'rgt scout plan' first[/dim]")
         raise typer.Exit(1)
 
     console.print(f"\n[bold cyan]Sprint Planning[/bold cyan]\n")
@@ -861,11 +861,11 @@ def _display_changes_analysis(result: dict, task_mgmt):
         # Show helpful next steps
         if task_mgmt and task_mgmt.enabled:
             console.print("\n[dim]💡 Create these tasks in your task management, then run:[/dim]")
-            console.print("[dim]   rg propose -t TASK-KEY[/dim]")
+            console.print("[dim]   rgt propose -t TASK-KEY[/dim]")
     else:
         if matched:
             console.print("\n[green]✓ All changes matched to existing tasks![/green]")
-            console.print("[dim]Run 'rg propose' to commit these changes.[/dim]")
+            console.print("[dim]Run 'rgt propose' to commit these changes.[/dim]")
 
     # Summary
     total_files = total_matched_files + total_unmatched_files
@@ -969,7 +969,7 @@ def _format_as_markdown(result: dict, task_mgmt, repo_name: str = "") -> str:
         lines.extend(["---", ""])
 
     # Footer
-    lines.append("💡 Create these tasks in your task management, then run: `rg propose -t TASK-KEY`")
+    lines.append("💡 Create these tasks in your task management, then run: `rgt propose -t TASK-KEY`")
 
     return "\n".join(lines)
 
@@ -1020,7 +1020,7 @@ def _format_as_notification(result: dict, task_mgmt) -> str:
             lines.append(f"• {title[:35]} ({file_count} files)")
         lines.append("")
 
-    lines.append("💡 Create tasks and run: rg propose -t TASK-KEY")
+    lines.append("💡 Create tasks and run: rgt propose -t TASK-KEY")
 
     return "\n".join(lines)
 

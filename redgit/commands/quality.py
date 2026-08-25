@@ -4,10 +4,10 @@ Code Quality command for RedGit.
 Analyzes code changes for quality issues using AI + linter (ruff/flake8).
 
 Usage:
-    rg quality              : Analyze staged changes
-    rg quality <file>       : Analyze specific file
-    rg quality --commit sha : Analyze specific commit
-    rg quality --branch     : Compare branch with main
+    rgt quality              : Analyze staged changes
+    rgt quality <file>       : Analyze specific file
+    rgt quality --commit sha : Analyze specific commit
+    rgt quality --branch     : Compare branch with main
 """
 
 import json
@@ -348,7 +348,7 @@ def _analyze_with_ai(diff: str, config: dict) -> dict:
     # Get LLM config
     llm_config = config.get("llm", {})
     if not llm_config:
-        raise ValueError("No LLM configured. Run: rg init")
+        raise ValueError("No LLM configured. Run: rgt init")
 
     # Call LLM
     client = LLMClient(llm_config)
@@ -722,11 +722,11 @@ def scan_cmd(
     regardless of git status. Useful for full project audits.
 
     Examples:
-        rg quality scan                    # Scan current directory
-        rg quality scan src/               # Scan specific directory
-        rg quality scan -c p/security-audit  # Use security rules
-        rg quality scan -o report.json -f json  # Export as JSON
-        rg quality scan --patterns         # Get design pattern suggestions
+        rgt quality scan                    # Scan current directory
+        rgt quality scan src/               # Scan specific directory
+        rgt quality scan -c p/security-audit  # Use security rules
+        rgt quality scan -o report.json -f json  # Export as JSON
+        rgt quality scan --patterns         # Get design pattern suggestions
     """
     from ..core.quality.semgrep import (
         is_semgrep_installed,
@@ -740,7 +740,7 @@ def scan_cmd(
     if not is_semgrep_installed():
         console.print("[red]Semgrep is not installed.[/red]")
         console.print("Install with: [cyan]pip install semgrep[/cyan]")
-        console.print("Or run: [cyan]rg config semgrep --install[/cyan]")
+        console.print("Or run: [cyan]rgt config semgrep --install[/cyan]")
         raise typer.Exit(1)
 
     # Get config
@@ -894,7 +894,7 @@ def _analyze_design_patterns(path: str, files: List[str], verbose: bool = False)
         llm_config = config.load().get("llm", {})
 
         if not llm_config:
-            console.print("[yellow]No LLM configured. Run: rg init[/yellow]")
+            console.print("[yellow]No LLM configured. Run: rgt init[/yellow]")
             return
 
         if verbose:
@@ -1083,7 +1083,7 @@ def status_cmd():
         console.print("     [dim]Install: pip install semgrep[/dim]")
     else:
         console.print("   Semgrep: [dim]Disabled[/dim]")
-        console.print("     [dim]Enable: rg config semgrep --enable[/dim]")
+        console.print("     [dim]Enable: rgt config semgrep --enable[/dim]")
 
     # Check for integration
     quality_integration = _get_code_quality()
@@ -1099,7 +1099,7 @@ def status_cmd():
             for name in available[:5]:
                 console.print(f"     [dim]- {name}[/dim]")
             console.print()
-            console.print(f"   Install: [cyan]rg install {available[0]}[/cyan]")
+            console.print(f"   Install: [cyan]rgt install {available[0]}[/cyan]")
 
 
 @quality_app.command("report")

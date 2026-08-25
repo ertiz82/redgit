@@ -28,7 +28,7 @@ The `local-merge` strategy immediately merges feature branches into your current
 ### How It Works
 
 ```
-rg propose
+rgt propose
 ```
 
 1. AI analyzes changes and groups them
@@ -40,7 +40,7 @@ rg propose
 3. All commits are now on your current branch
 
 ```
-rg push
+rgt push
 ```
 
 4. Pushes current branch to remote
@@ -52,12 +52,12 @@ rg push
 Before:
   main ─────○ (HEAD)
 
-After rg propose:
+After rgt propose:
   main ─────○───●───●───● (HEAD, all commits merged)
                │   │   │
                └───┴───┴── feature branches (deleted)
 
-After rg push:
+After rgt push:
   main ─────○───●───●───● (pushed to origin)
 ```
 
@@ -77,13 +77,13 @@ vim src/models/user.py
 vim tests/test_auth.py
 
 # Propose commits
-rg propose
+rgt propose
 # Output:
 #   ✓ Committed and merged feature/PROJ-123-auth-system
 #   ✓ Committed and merged feature/PROJ-124-user-model
 
 # Push everything
-rg push
+rgt push
 # Output:
 #   📤 Pushing current branch: main
 #   ✓ Pushed to origin/main
@@ -96,7 +96,7 @@ The `merge-request` strategy keeps feature branches separate for pull/merge requ
 ### How It Works
 
 ```
-rg propose
+rgt propose
 ```
 
 1. AI analyzes changes and groups them
@@ -107,7 +107,7 @@ rg propose
 3. Feature branches remain for later push
 
 ```
-rg push --pr
+rgt push --pr
 ```
 
 4. Pushes each feature branch to remote
@@ -120,12 +120,12 @@ rg push --pr
 Before:
   main ─────○ (HEAD)
 
-After rg propose:
+After rgt propose:
   main ─────○ (HEAD)
              ├── feature/PROJ-123-auth ────●
              └── feature/PROJ-124-user ────●
 
-After rg push --pr:
+After rgt push --pr:
   main ─────○ (HEAD)
              ├── feature/PROJ-123-auth ────● (pushed, PR created)
              └── feature/PROJ-124-user ────● (pushed, PR created)
@@ -151,16 +151,16 @@ vim src/auth.py
 vim src/models/user.py
 
 # Propose commits
-rg propose
+rgt propose
 # Output:
 #   ✓ Committed to feature/PROJ-123-auth-system
 #   ✓ Committed to feature/PROJ-124-user-model
 #
 #   Branches ready for push and PR creation.
-#   Run 'rg push --pr' to push branches and create pull requests
+#   Run 'rgt push --pr' to push branches and create pull requests
 
 # Push and create PRs
-rg push --pr
+rgt push --pr
 # Output:
 #   📦 Session: 2 branches, 2 issues
 #
@@ -198,7 +198,7 @@ workflow:
 
 ```bash
 # Clear existing session
-rg push  # or manually clear
+rgt push  # or manually clear
 ```
 
 ## Code Hosting Integration
@@ -218,7 +218,7 @@ integrations:
     token: ${GITHUB_TOKEN}
 ```
 
-With this configured, `rg push --pr` will automatically create pull requests.
+With this configured, `rgt push --pr` will automatically create pull requests.
 
 ## Task-Filtered Mode (Subtask Workflow)
 
@@ -236,7 +236,7 @@ When you have a parent task (e.g., "Admin panel improvements") and make multiple
 ### How It Works
 
 ```
-rg propose -t SCRUM-858
+rgt propose -t SCRUM-858
 ```
 
 1. **Parent task is fetched** from task management
@@ -254,7 +254,7 @@ rg propose -t SCRUM-858
 Before:
   dev ─────○ (HEAD, you start here)
 
-After rg propose -t SCRUM-858:
+After rgt propose -t SCRUM-858:
   dev ─────○ (returned here after completion)
              │
              └── feature/SCRUM-858-admin-panel (parent)
@@ -271,7 +271,7 @@ When you're already on a task branch, RedGit can detect the task automatically:
 
 ```bash
 # You're on: feature/SCRUM-858-admin-panel
-$ rg propose
+$ rgt propose
 
 # Output:
 # Branch'ten task tespit edildi: SCRUM-858
@@ -305,7 +305,7 @@ Parent branch'i pushlamak istiyor musunuz? [y/N]
 
 ```bash
 # Started on dev
-$ rg propose -t SCRUM-858
+$ rgt propose -t SCRUM-858
 # ... subtasks created ...
 # ... asked about push ...
 
@@ -331,7 +331,7 @@ vim src/api/auth.py
 vim README.md
 
 # 3. Run task-filtered mode
-rg propose -t SCRUM-858
+rgt propose -t SCRUM-858
 
 # Output:
 # Başlangıç branch: dev
@@ -367,9 +367,9 @@ git branch
 | Scenario | Recommendation |
 |----------|----------------|
 | Large feature with multiple components | Use `-t` to create subtasks |
-| Working on single file for a task | Use basic `rg propose` |
-| Already on task branch | Just run `rg propose` (auto-detects) |
-| Need to preview first | Use `rg propose -t TASK -n` (dry-run) |
+| Working on single file for a task | Use basic `rgt propose` |
+| Already on task branch | Just run `rgt propose` (auto-detects) |
+| Need to preview first | Use `rgt propose -t TASK -n` (dry-run) |
 
 ### Configuration
 

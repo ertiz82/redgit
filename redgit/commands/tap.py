@@ -4,13 +4,13 @@ Tap system for installing integrations and plugins from GitHub repositories.
 Similar to Homebrew taps, users can install integrations/plugins from GitHub:
 
     # From default tap (ertiz82/redgit-tap)
-    rg install jira               # integration from official tap
-    rg install plugin:laravel     # plugin from official tap
-    rg install slack@v1.0.0       # specific version
+    rgt install jira               # integration from official tap
+    rgt install plugin:laravel     # plugin from official tap
+    rgt install slack@v1.0.0       # specific version
 
     # From custom tap (auto-adds tap first)
-    rg install myorg/my-tap jira              # integration from custom tap
-    rg install myorg/my-tap plugin:myplugin   # plugin from custom tap
+    rgt install myorg/my-tap jira              # integration from custom tap
+    rgt install myorg/my-tap plugin:myplugin   # plugin from custom tap
 
 Default tap structure (ertiz82/redgit-tap):
     redgit-tap/
@@ -478,7 +478,7 @@ def install_from_tap(
     elif tap_name:
         # Specific tap requested but item not found - show error
         typer.secho(f"❌ '{name}' not found in tap '{tap_name}'.", fg=typer.colors.RED)
-        typer.echo(f"\n   💡 Check available items: rg tap list -v")
+        typer.echo(f"\n   💡 Check available items: rgt tap list -v")
         return False
     else:
         # No specific tap - fallback to default tap download
@@ -711,7 +711,7 @@ def _install_from_tap_url(
             ConfigManager().save(config)
             typer.echo(f"\n   ✅ Integration enabled")
     elif item_type == "plugin":
-        typer.echo(f"\n   💡 Enable with: rg plugin enable {name}")
+        typer.echo(f"\n   💡 Enable with: rgt plugin enable {name}")
 
     return True
 
@@ -825,7 +825,7 @@ def _install_from_default_tap(
             ConfigManager().save(config)
             typer.echo(f"\n   ✅ Integration enabled")
     elif item_type == "plugin":
-        typer.echo(f"\n   💡 Enable with: rg plugin enable {name}")
+        typer.echo(f"\n   💡 Enable with: rgt plugin enable {name}")
 
     return True
 
@@ -925,7 +925,7 @@ def _install_from_custom_tap(
                 from .integration import install_cmd as integration_install
                 integration_install(name)
         else:
-            typer.echo(f"\n   💡 Enable with: rg integration install {name}")
+            typer.echo(f"\n   💡 Enable with: rgt integration install {name}")
 
     return True
 
@@ -936,7 +936,7 @@ def uninstall_tap(name: str) -> bool:
 
     if name not in registry:
         typer.secho(f"❌ '{name}' was not installed from a tap.", fg=typer.colors.RED)
-        typer.echo(f"   Use 'rg integration remove' or 'rg plugin disable' for builtin items")
+        typer.echo(f"   Use 'rgt integration remove' or 'rgt plugin disable' for builtin items")
         return False
 
     item_info = registry[name]
@@ -1068,9 +1068,9 @@ def list_cmd(
             typer.echo("")
 
     typer.echo("   💡 Commands:")
-    typer.echo("      rg tap add <url>       - Add a tap repository")
-    typer.echo("      rg tap remove <name>   - Remove a tap")
-    typer.echo("      rg tap refresh         - Refresh tap caches")
+    typer.echo("      rgt tap add <url>       - Add a tap repository")
+    typer.echo("      rgt tap remove <name>   - Remove a tap")
+    typer.echo("      rgt tap refresh         - Refresh tap caches")
 
 
 @tap_app.command("add")
@@ -1089,7 +1089,7 @@ def add_cmd(
         added_tap_name = tap_mgr.add_tap(url, name)
         typer.secho(f"✅ Tap added: {added_tap_name}", fg=typer.colors.GREEN)
         typer.echo(f"   URL: {url}")
-        typer.echo(f"\n   💡 View available items: rg tap list -v")
+        typer.echo(f"\n   💡 View available items: rgt tap list -v")
     except ValueError as e:
         typer.secho(f"❌ {e}", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -1174,9 +1174,9 @@ def search_cmd(query: str = typer.Argument(None, help="Search query (optional)")
 
     typer.echo("   💡 Install:")
     if integrations:
-        typer.echo(f"      rg install {integrations[0]}")
+        typer.echo(f"      rgt install {integrations[0]}")
     if plugins:
-        typer.echo(f"      rg install plugin:{plugins[0]}")
+        typer.echo(f"      rgt install plugin:{plugins[0]}")
 
 
 @tap_app.command("update")
@@ -1237,15 +1237,15 @@ def install_cmd(
     Install integration or plugin from tap.
 
     Examples:
-        rg install jira                           # Integration from official tap
-        rg install plugin:laravel                 # Plugin from official tap
-        rg install slack@v1.0.0                   # Specific version
-        rg install myorg/my-tap jira              # From custom tap (auto-adds tap)
-        rg install myorg/my-tap plugin:myplugin   # Plugin from custom tap
+        rgt install jira                           # Integration from official tap
+        rgt install plugin:laravel                 # Plugin from official tap
+        rgt install slack@v1.0.0                   # Specific version
+        rgt install myorg/my-tap jira              # From custom tap (auto-adds tap)
+        rgt install myorg/my-tap plugin:myplugin   # Plugin from custom tap
     """
     # Check if first arg looks like a tap source (contains /)
     if "/" in spec and tap_source:
-        # Format: rg install myorg/tap itemname
+        # Format: rgt install myorg/tap itemname
         tap_url = spec
         item_spec = tap_source
 
@@ -1274,17 +1274,17 @@ def install_cmd(
         # Now install from that specific tap
         install_from_tap(item_spec, force=force, no_configure=no_configure, tap_name=target_tap_name)
     elif "/" in spec and not tap_source:
-        # Old format: rg install user/repo - show help
+        # Old format: rgt install user/repo - show help
         typer.secho("❌ Invalid format.", fg=typer.colors.RED)
         typer.echo("\n   To install from a custom tap:")
-        typer.echo(f"     rg install {spec} <item-name>")
-        typer.echo(f"     rg install {spec} plugin:<plugin-name>")
+        typer.echo(f"     rgt install {spec} <item-name>")
+        typer.echo(f"     rgt install {spec} plugin:<plugin-name>")
         typer.echo("\n   Examples:")
-        typer.echo(f"     rg install {spec} jira")
-        typer.echo(f"     rg install {spec} plugin:laravel")
+        typer.echo(f"     rgt install {spec} jira")
+        typer.echo(f"     rgt install {spec} plugin:laravel")
         raise typer.Exit(1)
     else:
-        # Standard format: rg install name or rg install plugin:name
+        # Standard format: rgt install name or rgt install plugin:name
         install_from_tap(spec, force=force, no_configure=no_configure)
 
 

@@ -216,8 +216,8 @@ async def _run_leader_session(
     if tunnel_url:
         console.print(f"   Public URL: [cyan]{tunnel_url}[/cyan]")
         console.print(f"\n[dim]Participants can join with:[/dim]")
-        console.print(f"   rg poker join {session.session_id}")
-        console.print(f"   rg poker join {tunnel_url}")
+        console.print(f"   rgt poker join {session.session_id}")
+        console.print(f"   rgt poker join {tunnel_url}")
     else:
         console.print(f"   Local URL: ws://localhost:{server.port}")
 
@@ -1107,5 +1107,5 @@ def join_cmd(
 def status_cmd():
     """Check for active poker sessions."""
     console.print("[dim]No active local sessions[/dim]")
-    console.print("\nTo start a session: rg poker start")
-    console.print("To join a session: rg poker join <session-id-or-url>")
+    console.print("\nTo start a session: rgt poker start")
+    console.print("To join a session: rgt poker join <session-id-or-url>")

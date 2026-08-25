@@ -2,12 +2,12 @@
 Config command - View and modify RedGit configuration.
 
 Usage:
-    rg config                  : Show entire config
-    rg config plugins          : Show plugins section
-    rg config notifications    : Show notification settings
-    rg config get <path>       : Get a specific value
-    rg config set <path> <val> : Set a specific value
-    rg config edit             : Open config in editor
+    rgt config                  : Show entire config
+    rgt config plugins          : Show plugins section
+    rgt config notifications    : Show notification settings
+    rgt config get <path>       : Get a specific value
+    rgt config set <path> <val> : Set a specific value
+    rgt config edit             : Open config in editor
 """
 
 import typer
@@ -81,9 +81,9 @@ def config_cmd(ctx: typer.Context):
     _build_tree(config, tree)
     console.print(tree)
 
-    console.print("\n[dim]Use 'rg config show <section>' to view a specific section[/dim]")
-    console.print("[dim]Use 'rg config set <path> <value>' to modify[/dim]")
-    console.print("[dim]Use 'rg config quality --enable' to enable quality checks[/dim]")
+    console.print("\n[dim]Use 'rgt config show <section>' to view a specific section[/dim]")
+    console.print("[dim]Use 'rgt config set <path> <value>' to modify[/dim]")
+    console.print("[dim]Use 'rgt config quality --enable' to enable quality checks[/dim]")
 
 
 @config_app.command("show")
@@ -247,7 +247,7 @@ def notifications_cmd():
     enabled = notifications.get("enabled", True)
     status = "[green]enabled[/green]" if enabled else "[red]disabled[/red]"
     console.print(f"   Master switch: {status}")
-    console.print("   [dim]rg config set notifications.enabled true/false[/dim]\n")
+    console.print("   [dim]rgt config set notifications.enabled true/false[/dim]\n")
 
     # Events
     console.print("   [bold]Events:[/bold]\n")
@@ -269,7 +269,7 @@ def notifications_cmd():
         icon = "[green]✓[/green]" if is_enabled else "[red]✗[/red]"
         console.print(f"   {icon} {event:20} {description}")
 
-    console.print("\n   [dim]Toggle: rg config set notifications.events.<event> true/false[/dim]")
+    console.print("\n   [dim]Toggle: rgt config set notifications.events.<event> true/false[/dim]")
 
 
 @config_app.command("reset")
@@ -284,7 +284,7 @@ def reset_cmd(
         if not force and not Confirm.ask("Reset entire config to defaults?", default=False):
             return
         # Can't reset entire config easily, just warn
-        console.print("[yellow]Use 'rg init' to reinitialize config.[/yellow]")
+        console.print("[yellow]Use 'rgt init' to reinitialize config.[/yellow]")
         return
 
     config_manager = ConfigManager()
@@ -380,10 +380,10 @@ def quality_cmd(
         console.print(f"   Prompt file: {quality.get('prompt_file', 'quality_prompt.md')}")
 
         console.print("\n[dim]Commands:[/dim]")
-        console.print("   [dim]rg config quality --enable     # Enable quality checks[/dim]")
-        console.print("   [dim]rg config quality --disable    # Disable quality checks[/dim]")
-        console.print("   [dim]rg config quality --threshold 80  # Set threshold[/dim]")
-        console.print("   [dim]rg quality check              # Run quality check manually[/dim]")
+        console.print("   [dim]rgt config quality --enable     # Enable quality checks[/dim]")
+        console.print("   [dim]rgt config quality --disable    # Disable quality checks[/dim]")
+        console.print("   [dim]rgt config quality --threshold 80  # Set threshold[/dim]")
+        console.print("   [dim]rgt quality check              # Run quality check manually[/dim]")
         return
 
     # Apply changes
@@ -520,12 +520,12 @@ def semgrep_cmd(
             console.print(f"   Excludes: {', '.join(excludes)}")
 
         console.print("\n[dim]Commands:[/dim]")
-        console.print("   [dim]rg config semgrep --enable       # Enable Semgrep[/dim]")
-        console.print("   [dim]rg config semgrep --disable      # Disable Semgrep[/dim]")
-        console.print("   [dim]rg config semgrep --install      # Install Semgrep[/dim]")
-        console.print("   [dim]rg config semgrep --add p/python # Add rule pack[/dim]")
-        console.print("   [dim]rg config semgrep --remove auto  # Remove rule pack[/dim]")
-        console.print("   [dim]rg config semgrep --list-rules   # Show available packs[/dim]")
+        console.print("   [dim]rgt config semgrep --enable       # Enable Semgrep[/dim]")
+        console.print("   [dim]rgt config semgrep --disable      # Disable Semgrep[/dim]")
+        console.print("   [dim]rgt config semgrep --install      # Install Semgrep[/dim]")
+        console.print("   [dim]rgt config semgrep --add p/python # Add rule pack[/dim]")
+        console.print("   [dim]rgt config semgrep --remove auto  # Remove rule pack[/dim]")
+        console.print("   [dim]rgt config semgrep --list-rules   # Show available packs[/dim]")
         return
 
     # Apply changes
@@ -541,7 +541,7 @@ def semgrep_cmd(
                     raise typer.Exit(1)
             else:
                 console.print("   [red]Cannot enable Semgrep without installation.[/red]")
-                console.print("   [dim]Install with: rg config semgrep --install[/dim]")
+                console.print("   [dim]Install with: rgt config semgrep --install[/dim]")
                 raise typer.Exit(1)
 
         config_manager.set_semgrep_enabled(enable)
@@ -573,11 +573,11 @@ def export_prompt_cmd(
     You can only customize the instructions and guidelines part of the prompt.
 
     Examples:
-        rg config export-prompt default              # Export default.md (for rg propose)
-        rg config export-prompt laravel              # Export laravel plugin prompt
-        rg config export-prompt jira:issue_title     # Export Jira issue title prompt
-        rg config export-prompt jira:issue_description  # Export Jira description prompt
-        rg config export-prompt quality              # Export quality analysis prompt
+        rgt config export-prompt default              # Export default.md (for rgt propose)
+        rgt config export-prompt laravel              # Export laravel plugin prompt
+        rgt config export-prompt jira:issue_title     # Export Jira issue title prompt
+        rgt config export-prompt jira:issue_description  # Export Jira description prompt
+        rgt config export-prompt quality              # Export quality analysis prompt
     """
     from pathlib import Path
     from ..core.common.prompt import BUILTIN_PROMPTS_DIR
@@ -629,7 +629,7 @@ def export_prompt_cmd(
                         console.print(f"\n[cyan]Available prompts for {target_integration}:[/cyan]")
                         for pname, pdef in prompts.items():
                             console.print(f"   • {target_integration}:{pname} - {pdef.get('description', '')}")
-                        console.print(f"\n[dim]Export with: rg config export-prompt {target_integration}:<prompt_name>[/dim]")
+                        console.print(f"\n[dim]Export with: rgt config export-prompt {target_integration}:<prompt_name>[/dim]")
                         return
                 break
 
@@ -740,8 +740,8 @@ def export_prompt_cmd(
     else:
         console.print(f"\n[dim]To use this prompt:[/dim]")
         console.print(f"   1. Edit {output_path}")
-        console.print(f"   2. Set in config: rg config set llm.prompt {output_name.replace('.md', '')}")
-        console.print(f"   3. Or use directly: rg propose -p {output_name.replace('.md', '')}")
+        console.print(f"   2. Set in config: rgt config set llm.prompt {output_name.replace('.md', '')}")
+        console.print(f"   3. Or use directly: rgt propose -p {output_name.replace('.md', '')}")
 
     console.print(f"\n[yellow]Note:[/yellow] Response format (JSON schema) is managed by RedGit and cannot be modified.")
 
@@ -760,8 +760,8 @@ def list_prompts_cmd():
 
     console.print("\n[bold cyan]Available Prompts[/bold cyan]\n")
 
-    # Builtin prompts (for rg propose)
-    console.print("   [bold]Propose prompts (rg propose):[/bold]")
+    # Builtin prompts (for rgt propose)
+    console.print("   [bold]Propose prompts (rgt propose):[/bold]")
     if BUILTIN_PROMPTS_DIR.exists():
         for f in sorted(BUILTIN_PROMPTS_DIR.glob("*.md")):
             console.print(f"   • {f.stem}")
@@ -811,4 +811,4 @@ def list_prompts_cmd():
             for f in sorted(custom_templates):
                 console.print(f"   • {f.stem} [green](custom template)[/green]")
 
-    console.print("\n[dim]Export a prompt for customization: rg config export-prompt <name>[/dim]")
+    console.print("\n[dim]Export a prompt for customization: rgt config export-prompt <name>[/dim]")

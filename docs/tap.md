@@ -22,36 +22,36 @@ RedGit Tap provides all integrations for RedGit. These include:
 
 ```bash
 # Install an integration
-rg install slack
-rg install linear
-rg install sonarqube
+rgt install slack
+rgt install linear
+rgt install sonarqube
 
 # Install a plugin
-rg install plugin:laravel
-rg install plugin:changelog
+rgt install plugin:laravel
+rgt install plugin:changelog
 
 # Install specific version
-rg install slack@v1.0.0
+rgt install slack@v1.0.0
 
 # List available integrations
-rg tap list
+rgt tap list
 ```
 
 ### Install from Custom Tap
 
 ```bash
 # Install from a custom tap (auto-adds tap first)
-rg install myorg/my-tap jira
-rg install myorg/my-tap plugin:myplugin
+rgt install myorg/my-tap jira
+rgt install myorg/my-tap plugin:myplugin
 
 # Skip configuration wizard
-rg install myorg/my-tap slack --no-configure
+rgt install myorg/my-tap slack --no-configure
 ```
 
 ### Check Installed
 
 ```bash
-rg integration status
+rgt integration status
 ```
 
 ---
@@ -125,7 +125,7 @@ rg integration status
 
 ```bash
 # Install
-rg install slack
+rgt install slack
 
 # Configure in .redgit/config.yaml
 # integrations:
@@ -140,7 +140,7 @@ rg install slack
 
 ```bash
 # Install
-rg install linear
+rgt install linear
 
 # Configure
 # integrations:
@@ -156,7 +156,7 @@ rg install linear
 
 ```bash
 # Install
-rg install sonarqube
+rgt install sonarqube
 
 # Set environment variable
 export SONAR_TOKEN="your-token"
@@ -233,8 +233,8 @@ You can create your own tap for internal integrations and plugins. Use the offic
 gh repo clone ertiz82/redgit-tap-template my-tap
 
 # Install from your custom tap
-rg install myorg/my-tap my-integration
-rg install myorg/my-tap plugin:my-plugin
+rgt install myorg/my-tap my-integration
+rgt install myorg/my-tap plugin:my-plugin
 ```
 
 See the [Custom Integration Guide](integrations/custom.md) for details on creating integrations.

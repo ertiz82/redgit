@@ -64,10 +64,10 @@ Then restart your terminal.
 ```bash
 # Either command works
 redgit --version
-rg --version
+rgt --version
 ```
 
-> **Note:** If you have ripgrep installed, both tools use `rg`. See [Troubleshooting](troubleshooting.md) for alias setup.
+> **Note:** The short command is `rgt` (renamed from `rg` in v1.5.0 to avoid conflicting with ripgrep).
 
 ---
 
@@ -108,7 +108,7 @@ ollama pull qwen2.5-coder:7b
 
 ```bash
 cd your-project
-rg init
+rgt init
 ```
 
 The interactive wizard will configure:
@@ -129,7 +129,7 @@ vim tests/test_feature.py
 ### 3. Analyze and Commit
 
 ```bash
-rg propose
+rgt propose
 ```
 
 RedGit will:
@@ -142,14 +142,14 @@ RedGit will:
 ### 4. Push
 
 ```bash
-rg push
+rgt push
 ```
 
 ---
 
 ## Configuration
 
-After `rg init`, your config is in `.redgit/config.yaml`:
+After `rgt init`, your config is in `.redgit/config.yaml`:
 
 ```yaml
 # LLM provider
@@ -176,19 +176,19 @@ All integrations are available from [RedGit Tap](https://github.com/ertiz82/redg
 
 ```bash
 # Task Management
-rg install jira
-rg install linear
+rgt install jira
+rgt install linear
 
 # Code Hosting
-rg install github
-rg install gitlab
+rgt install github
+rgt install gitlab
 
 # Notifications
-rg install slack
-rg install discord
+rgt install slack
+rgt install discord
 
 # List all available
-rg integration list --all
+rgt integration list --all
 ```
 
 ---
@@ -202,41 +202,41 @@ rg integration list --all
 vim src/app.py
 
 # Let AI group and commit
-rg propose
+rgt propose
 
 # Push to remote
-rg push
+rgt push
 ```
 
 ### With Jira Integration
 
 ```bash
 # Changes are matched to your active Jira issues
-rg propose
+rgt propose
 
 # Push and transition issues to Done
-rg push
+rgt push
 ```
 
 ### Specific Task
 
 ```bash
 # Commit all changes to one task
-rg propose --task PROJ-123
-rg push
+rgt propose --task PROJ-123
+rgt push
 ```
 
 ### Team with PRs
 
 ```bash
 # Configure merge-request strategy
-rg config set workflow.strategy merge-request
+rgt config set workflow.strategy merge-request
 
 # Make changes
-rg propose
+rgt propose
 
 # Push and create PRs
-rg push --pr
+rgt push --pr
 ```
 
 ---

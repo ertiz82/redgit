@@ -39,15 +39,15 @@ git commit -m "fix: resolve login issue PROJ-123"
 git push
 
 # After: RedGit workflow
-rg propose   # AI analyzes, groups, and commits
-rg push      # Push and update Jira/Linear
+rgt propose   # AI analyzes, groups, and commits
+rgt push      # Push and update Jira/Linear
 ```
 
 ---
 
 ## Demo
 
-<!-- TODO: Add demo GIF showing rg propose and push in action -->
+<!-- TODO: Add demo GIF showing rgt propose and push in action -->
 <p align="center">
   <img src="https://raw.githubusercontent.com/ertiz82/redgit/main/assets/rg_propose.png" alt="RedGit Propose" width="500"/>
 <img src="https://raw.githubusercontent.com/ertiz82/redgit/main/assets/rg_push.png" alt="RedGit Push" width="500"/>
@@ -103,7 +103,7 @@ pip install redgit
 pipx install redgit
 ```
 
-After installation, use either `redgit` or the short alias `rg`.
+After installation, use either `redgit` or the short alias `rgt`.
 
 ---
 
@@ -111,48 +111,48 @@ After installation, use either `redgit` or the short alias `rg`.
 
 ```bash
 # 1. Initialize in your project
-rg init
+rgt init
 
 # 2. Make changes to your code...
 
 # 3. Let AI analyze and create commits
-rg propose
+rgt propose
 
 # 4. Push and complete issues
-rg push
+rgt push
 ```
 
 ### With Jira Integration
 
 ```bash
 # Setup Jira
-rg install jira
+rgt install jira
 
 # Your workflow
-rg propose        # AI matches changes with your Jira issues
-rg push           # Push and transition issues to Done
+rgt propose        # AI matches changes with your Jira issues
+rgt push           # Push and transition issues to Done
 ```
 
 ### With GitHub PRs
 
 ```bash
 # Setup GitHub
-rg integration install github
+rgt integration install github
 
 # Create commits and PRs
-rg propose
-rg push --pr      # Creates pull requests automatically
+rgt propose
+rgt push --pr      # Creates pull requests automatically
 ```
 
 ### Task-Filtered Mode (Subtasks)
 
 ```bash
 # Create subtasks under a parent task
-rg propose -t PROJ-123
+rgt propose -t PROJ-123
 
 # Auto-detect task from branch name
 git checkout feature/PROJ-123-some-work
-rg propose  # Detects PROJ-123 automatically
+rgt propose  # Detects PROJ-123 automatically
 
 # AI analyzes files, creates relevant subtasks, always returns to original branch
 ```
@@ -175,9 +175,9 @@ RedGit supports 30+ integrations across different categories:
 Install integrations from [RedGit Tap](https://github.com/ertiz82/redgit-tap):
 
 ```bash
-rg install linear
-rg install slack
-rg install sonarqube
+rgt install linear
+rgt install slack
+rgt install sonarqube
 ```
 
 ---

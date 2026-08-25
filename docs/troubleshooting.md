@@ -6,7 +6,7 @@ Common issues and their solutions.
 
 ## Installation Issues
 
-### "Command not found: rg"
+### "Command not found: rgt"
 
 After installing with pip/pipx, the command may not be in PATH.
 
@@ -23,23 +23,15 @@ export PATH="$HOME/.local/bin:$PATH"
 source ~/.zshrc
 ```
 
-### Conflict with ripgrep
+### `rg` command stopped working (upgraded from < 1.5.0)
 
-Both RedGit and ripgrep use the `rg` command.
+As of v1.5.0 the short command is `rgt` (renamed from `rg` to avoid
+conflicting with ripgrep). Use `rgt` or the full `redgit` command.
 
-**Solution:**
+If you want the old alias back, add to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
-# Option 1: Use the full command
-redgit --help
-
-# Option 2: Add alias to ~/.zshrc or ~/.bashrc
-alias rg='/opt/homebrew/opt/redgit/bin/rg'  # Homebrew
-# or
-alias rg="$HOME/.local/bin/rg"              # pip/pipx
-
-# To access ripgrep when needed
-$(brew --prefix ripgrep)/bin/rg
+alias rg='rgt'   # not recommended if you also use ripgrep
 ```
 
 ---
@@ -80,7 +72,7 @@ The AI is taking too long to respond.
 ollama pull qwen2.5-coder:3b
 
 # Or use a different provider
-rg config set llm.provider openai
+rgt config set llm.provider openai
 ```
 
 ---
@@ -103,7 +95,7 @@ git diff
 
 ### SSH Push Hangs
 
-`rg push` hangs when pushing via SSH.
+`rgt push` hangs when pushing via SSH.
 
 **Solution:**
 
@@ -130,7 +122,7 @@ git add .
 git commit
 
 # Or switch to merge-request strategy
-rg config set workflow.strategy merge-request
+rgt config set workflow.strategy merge-request
 ```
 
 ---
@@ -204,7 +196,7 @@ integrations:
 
 ### Linter Not Found
 
-`rg quality check` says no linter found.
+`rgt quality check` says no linter found.
 
 **Solution:**
 
@@ -256,7 +248,7 @@ ls -la .redgit/config.yaml
 python -c "import yaml; yaml.safe_load(open('.redgit/config.yaml'))"
 
 # View current config
-rg config show
+rgt config show
 ```
 
 ### Environment Variables Not Working
@@ -290,7 +282,7 @@ Old session data causing issues.
 rm -rf .redgit/session/
 
 # Or push/complete current session first
-rg push
+rgt push
 ```
 
 ---
@@ -299,7 +291,7 @@ rg push
 
 ### Slow Analysis
 
-`rg propose` is slow.
+`rgt propose` is slow.
 
 **Solutions:**
 
@@ -307,19 +299,19 @@ rg push
    ```bash
    # Use smaller Ollama model
    ollama pull qwen2.5-coder:3b
-   rg config set llm.model qwen2.5-coder:3b
+   rgt config set llm.model qwen2.5-coder:3b
    ```
 
 2. Reduce number of files
    ```bash
    # Commit in smaller batches
    git add src/feature/
-   rg propose
+   rgt propose
    ```
 
 3. Skip task management
    ```bash
-   rg propose --no-task
+   rgt propose --no-task
    ```
 
 ---
@@ -331,14 +323,14 @@ rg push
 Run with verbose output:
 
 ```bash
-rg propose -v
-rg push -v
+rgt propose -v
+rgt push -v
 ```
 
 ### Check Versions
 
 ```bash
-rg --version
+rgt --version
 python --version
 git --version
 ```

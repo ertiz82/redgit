@@ -24,7 +24,7 @@ How would this feature be used?
 
 ```bash
 # Example commands
-rg new-feature --option value
+rgt new-feature --option value
 ```
 
 ## Alternatives Considered

@@ -77,14 +77,14 @@ plugins:
 # Integration Configurations
 # ============================================
 # All integrations are installed from RedGit Tap:
-#   rg install jira
-#   rg install github
-#   rg install slack
+#   rgt install jira
+#   rgt install github
+#   rgt install slack
 #
 # See: https://github.com/ertiz82/redgit-tap
 
 integrations:
-  # Example: Jira (after: rg install jira)
+  # Example: Jira (after: rgt install jira)
   jira:
     site: https://your-domain.atlassian.net
     email: you@example.com
@@ -94,13 +94,13 @@ integrations:
     branch_pattern: feature/{issue_key}
     transition_strategy: auto    # auto | ask
 
-  # Example: GitHub (after: rg install github)
+  # Example: GitHub (after: rgt install github)
   github:
     owner: username
     repo: reponame
     # token: Use GITHUB_TOKEN env var
 
-  # Example: Slack (after: rg install slack)
+  # Example: Slack (after: rgt install slack)
   slack:
     webhook_url: https://hooks.slack.com/services/xxx
     channel: "#dev-notifications"
@@ -270,7 +270,7 @@ Override AI prompts in `.redgit/prompts/`:
 Use with:
 
 ```bash
-rg propose -p my-prompt
+rgt propose -p my-prompt
 ```
 
 ---
@@ -279,14 +279,14 @@ rg propose -p my-prompt
 
 ```bash
 # Show current config
-rg config show
+rgt config show
 
 # Set a value
-rg config set llm.provider ollama
-rg config set workflow.strategy merge-request
+rgt config set llm.provider ollama
+rgt config set workflow.strategy merge-request
 
 # Get a value
-rg config get llm.provider
+rgt config get llm.provider
 ```
 
 ---

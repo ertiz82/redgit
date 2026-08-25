@@ -159,7 +159,7 @@ def cleanup_cmd(
         console.print(f"[dim]No backups to remove. Total: {after}[/dim]")
 
 
-# Default command (when just 'rg backup' is called)
+# Default command (when just 'rgt backup' is called)
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
     """Manage working tree backups."""

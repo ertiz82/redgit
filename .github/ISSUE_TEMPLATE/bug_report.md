@@ -12,16 +12,16 @@ A clear and concise description of what the bug is.
 
 ## Environment
 
-- **RedGit version**: (run `rg --version`)
+- **RedGit version**: (run `rgt --version`)
 - **Python version**: (run `python --version`)
 - **OS**: (e.g., macOS 14.0, Ubuntu 22.04, Windows 11)
 - **Installation method**: (pip, pipx, homebrew, source)
 
 ## Steps to Reproduce
 
-1. Run `rg init`
+1. Run `rgt init`
 2. Configure...
-3. Run `rg propose`
+3. Run `rgt propose`
 4. See error
 
 ## Expected Behavior

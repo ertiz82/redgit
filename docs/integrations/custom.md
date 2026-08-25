@@ -8,7 +8,7 @@ The fastest way to create a custom integration:
 
 ```bash
 # Scaffold a new integration
-rg integration create my_tracker
+rgt integration create my_tracker
 
 # This creates:
 # .redgit/integrations/my_tracker/
@@ -136,7 +136,7 @@ issue = Issue(
 
 ## Adding Install Schema
 
-To enable `rg integration install my_tracker`, add an install schema:
+To enable `rgt integration install my_tracker`, add an install schema:
 
 ```python
 # .redgit/integrations/my_tracker.py
@@ -240,8 +240,8 @@ def create_issue(title: str):
 
 Commands will be available as:
 ```bash
-rg my_tracker list
-rg my_tracker create "New feature"
+rgt my_tracker list
+rgt my_tracker create "New feature"
 ```
 
 ## Configuration
@@ -262,7 +262,7 @@ integrations:
 
 Or use the install wizard:
 ```bash
-rg integration install my_tracker
+rgt integration install my_tracker
 ```
 
 ## Complete Example: Linear Integration
@@ -504,7 +504,7 @@ Task management integrations can provide custom prompts for generating issue tit
 
 ### How Integration Prompts Work
 
-When `rg propose --detailed` is used:
+When `rgt propose --detailed` is used:
 1. RedGit analyzes file diffs for each commit group
 2. If integration has custom prompts, they're used to generate issue content
 3. The LLM follows your prompts to create localized/customized issue titles and descriptions
@@ -643,7 +643,7 @@ class MyTrackerIntegration(TaskManagementBase):
 Users can then run:
 ```bash
 # Export Jira prompts for customization
-rg integration prompts jira --export
+rgt integration prompts jira --export
 
 # Creates:
 # .redgit/prompts/integrations/jira/issue_title.md
@@ -655,7 +655,7 @@ rg integration prompts jira --export
 Use verbose mode to verify prompts are being used:
 
 ```bash
-rg propose -v -d -n
+rgt propose -v -d -n
 ```
 
 Output shows:
@@ -676,7 +676,7 @@ Prompt Source: integration prompts
 
 ## Publishing Your Integration
 
-Once you've created and tested your integration, you can publish it so others can install it with `rg install`.
+Once you've created and tested your integration, you can publish it so others can install it with `rgt install`.
 
 ### Option 1: Publish to Your Own GitHub Repository
 
@@ -713,15 +713,15 @@ Once you've created and tested your integration, you can publish it so others ca
 
    ```bash
    # Install from GitHub URL
-   rg install github:yourusername/redgit-my-tracker
+   rgt install github:yourusername/redgit-my-tracker
 
    # Or with full URL
-   rg install https://github.com/yourusername/redgit-my-tracker
+   rgt install https://github.com/yourusername/redgit-my-tracker
    ```
 
 ### Option 2: Submit to Official RedGit Tap
 
-To make your integration available in the official tap (`rg install my_tracker`):
+To make your integration available in the official tap (`rgt install my_tracker`):
 
 1. **Fork** [github.com/ertiz82/redgit-tap](https://github.com/ertiz82/redgit-tap)
 
@@ -758,7 +758,7 @@ To make your integration available in the official tap (`rg install my_tracker`)
 Once merged, users can install with:
 
 ```bash
-rg install my_tracker
+rgt install my_tracker
 ```
 
 ### Repository Structure for Publishing
@@ -787,8 +787,8 @@ Use semantic versioning in your `index.json`:
 Users can install specific versions:
 
 ```bash
-rg install my_tracker@1.0.0
-rg install my_tracker@latest
+rgt install my_tracker@1.0.0
+rgt install my_tracker@latest
 ```
 
 ---

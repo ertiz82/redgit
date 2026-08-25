@@ -24,7 +24,7 @@ GLOBAL_PLUGINS_PATH = GLOBAL_PLUGINS_DIR
 PROJECT_PLUGINS_DIR = Path(".redgit/plugins")
 
 # Available builtin plugins
-# Plugins are now loaded from tap (redgit-tap) via `rg install <plugin>`
+# Plugins are now loaded from tap (redgit-tap) via `rgt install <plugin>`
 # No builtin plugins in core package
 BUILTIN_PLUGINS = []
 
@@ -288,7 +288,7 @@ def get_plugin_shortcuts(name: str) -> Dict[str, Any]:
             if attr_name.endswith("_shortcut"):
                 shortcut_name = attr_name.replace("_shortcut", "")
                 shortcuts[shortcut_name] = getattr(module, attr_name)
-            # Check for shortcut Typer apps (e.g., release_app -> rg release)
+            # Check for shortcut Typer apps (e.g., release_app -> rgt release)
             elif attr_name.endswith("_app"):
                 attr = getattr(module, attr_name)
                 if isinstance(attr, typer.Typer):

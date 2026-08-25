@@ -2,7 +2,7 @@
 Backup Manager for RedGit.
 
 Provides working tree backup and restore functionality
-to protect user changes during rg propose operations.
+to protect user changes during rgt propose operations.
 """
 
 import shutil

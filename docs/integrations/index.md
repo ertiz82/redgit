@@ -30,9 +30,9 @@ Only one integration per type can be active at a time:
 ```yaml
 # .redgit/config.yaml
 active:
-  task_management: jira      # Used by rg propose, rg push
-  code_hosting: github       # Used by rg push --pr
-  ci_cd: github-actions      # Used by rg push --ci
+  task_management: jira      # Used by rgt propose, rgt push
+  code_hosting: github       # Used by rgt push --pr
+  ci_cd: github-actions      # Used by rgt push --ci
   notification: slack        # Used for all notifications
 ```
 
@@ -44,13 +44,13 @@ All integrations are available from [RedGit Tap](../tap.md):
 
 ```bash
 # List available integrations
-rg integration list --all
+rgt integration list --all
 
 # Install an integration
-rg install jira
+rgt install jira
 
 # Check what's installed
-rg integration list
+rgt integration list
 ```
 
 See [RedGit Tap Documentation](../tap.md) for:

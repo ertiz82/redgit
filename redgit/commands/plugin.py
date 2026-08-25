@@ -40,8 +40,8 @@ def list_cmd(
 
     if not installed:
         typer.echo("\n📦 No plugins installed.\n")
-        typer.echo("  💡 Install from taps: rg install plugin:<name>")
-        typer.echo("  💡 Browse available: rg plugin list --all")
+        typer.echo("  💡 Install from taps: rgt install plugin:<name>")
+        typer.echo("  💡 Browse available: rgt plugin list --all")
         typer.echo("")
     else:
         typer.echo("\n📦 Installed plugins:")
@@ -68,10 +68,10 @@ def list_cmd(
                 if plugin.description:
                     typer.echo(f"      {plugin.description[:60]}...")
 
-            typer.echo("\n   💡 Install: rg install plugin:<name>")
+            typer.echo("\n   💡 Install: rgt install plugin:<name>")
         typer.echo("")
     else:
-        typer.echo("  💡 Show all from taps: rg plugin list --all")
+        typer.echo("  💡 Show all from taps: rgt plugin list --all")
         typer.echo("")
 
 
@@ -83,7 +83,7 @@ def _enable_plugin(name: str):
         typer.secho(f"❌ '{name}' plugin not installed.", fg=typer.colors.RED)
         if installed:
             typer.echo(f"   Installed: {', '.join(sorted(installed))}")
-        typer.echo(f"   💡 Install first: rg install plugin:{name}")
+        typer.echo(f"   💡 Install first: rgt install plugin:{name}")
         raise typer.Exit(1)
 
     # Add to config
