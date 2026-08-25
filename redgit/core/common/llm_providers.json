@@ -5,8 +5,8 @@
       "name": "Claude Code CLI",
       "cmd": "claude",
       "install": "npm install -g @anthropic-ai/claude-code",
-      "models": ["claude-sonnet-4-20250514", "claude-opus-4-20250514"],
-      "default_model": "claude-sonnet-4-20250514"
+      "models": ["sonnet", "opus", "haiku"],
+      "default_model": "sonnet"
     },
     "qwen-code": {
       "type": "cli",
@@ -29,8 +29,8 @@
       "name": "Claude API (Anthropic)",
       "env_key": "ANTHROPIC_API_KEY",
       "install": "pip install anthropic",
-      "models": ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-haiku-20241022"],
-      "default_model": "claude-sonnet-4-20250514"
+      "models": ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"],
+      "default_model": "claude-sonnet-5"
     },
     "ollama": {
       "type": "api",
@@ -46,8 +46,8 @@
       "name": "OpenRouter",
       "env_key": "OPENROUTER_API_KEY",
       "install": "pip install openai",
-      "models": ["anthropic/claude-sonnet-4", "openai/gpt-4o", "google/gemini-2.0-flash-exp"],
-      "default_model": "anthropic/claude-sonnet-4",
+      "models": ["anthropic/claude-sonnet-5", "openai/gpt-4o", "google/gemini-2.0-flash-exp"],
+      "default_model": "anthropic/claude-sonnet-5",
       "base_url": "https://openrouter.ai/api/v1"
     }
   }

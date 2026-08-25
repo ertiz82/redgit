@@ -23,6 +23,7 @@
 ### 🐛 Fixes
 
 - Default LLM timeout raised from 120s to 300s (large changesets no longer time out)
+- Retired `claude-sonnet-4-20250514` defaults replaced (CLI: `sonnet` alias; API: `claude-sonnet-5`)
 - CLI provider timeouts now raise a clear error with a hint to increase `llm.timeout`
 - `rgt llm` chat calls now respect `llm.timeout` (previously unbounded)
 - CLI providers no longer inherit stdin (prevents hangs in non-interactive runs)
