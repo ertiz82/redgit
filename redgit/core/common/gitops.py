@@ -1,9 +1,13 @@
 import contextlib
+import os
 import subprocess
+import tempfile
+import uuid
 from pathlib import Path
 from typing import List, Generator, Optional
 import git
 from git.exc import InvalidGitRepositoryError
+from rich.console import Console
 
 from ...utils.security import is_excluded
 from .constants import (
@@ -11,6 +15,8 @@ from .constants import (
     GIT_CONFLICT_STATUSES,
     GIT_DELETED_CONFLICT_STATUSES,
 )
+
+_console = Console(stderr=True)
 
 
 class NotAGitRepoError(Exception):
@@ -292,6 +298,229 @@ class GitOps:
                 return False
         return False
 
+    def _pop_stash_or_warn(self, message_pattern: str) -> bool:
+        """
+        Pop a stash by message pattern; if the stash exists but the pop fails
+        (e.g. conflict), warn the user loudly instead of failing silently.
+
+        Returns:
+            True if there was nothing to pop or the pop succeeded,
+            False if the stash exists but could not be popped.
+        """
+        stash_index = self._find_stash_index(message_pattern)
+        if stash_index is None:
+            return True
+
+        if self._pop_stash_by_message(message_pattern):
+            return True
+
+        _console.print(
+            f"[red bold]⚠️  Stash geri yüklenemedi (muhtemel conflict): "
+            f"'{message_pattern}'[/red bold]"
+        )
+        _console.print(
+            "[yellow]   Değişiklikleriniz kaybolmadı, stash içinde bekliyor:[/yellow]"
+        )
+        _console.print(f"[dim]   git stash list                    # '{message_pattern}' girdisini bulun[/dim]")
+        _console.print(f"[dim]   git stash pop stash@{{{stash_index}}}          # elle geri yükleyin[/dim]")
+        return False
+
+    @staticmethod
+    def _unique_stash_token(prefix: str, name: str) -> str:
+        """
+        Build a per-run unique stash message so a stale stash from a previous
+        failed run with the same branch name can never be matched/popped.
+        """
+        return f"{prefix}-{name}-{uuid.uuid4().hex[:8]}"
+
+    def _classify_files(self, files: List[str]) -> tuple:
+        """
+        Classify requested files into (safe_files, deleted_files, missing_files).
+
+        - safe_files: exist on disk, will be committed with worktree content
+        - deleted_files: explicitly marked "D" in git status, deletion will be committed
+        - missing_files: absent from disk but NOT marked deleted in git status.
+          These are likely stuck in a stash from a previous failed run; they are
+          NEVER committed as deletions. A loud warning is printed instead.
+        """
+        current_changes = {c["file"]: c["status"] for c in self.get_changes()}
+        git_root = Path(self.repo.working_dir)
+
+        safe_files = []
+        deleted_files = []
+        missing_files = []
+        for f in files:
+            if is_excluded(f):
+                continue
+            status = current_changes.get(f)
+            file_path = git_root / f
+
+            if status == "D":
+                deleted_files.append(f)
+            elif file_path.exists():
+                safe_files.append(f)
+            else:
+                missing_files.append(f)
+
+        if missing_files:
+            _console.print(
+                f"[red bold]⚠️  {len(missing_files)} dosya diskte yok ama git status silinmiş "
+                f"olarak işaretlemiyor — silme OLARAK COMMITLENMEYECEK:[/red bold]"
+            )
+            for f in missing_files[:10]:
+                _console.print(f"[yellow]   • {f}[/yellow]")
+            _console.print("[dim]   Muhtemelen önceki bir çalışmadan stash içinde kaldılar: git stash list[/dim]")
+
+        return safe_files, deleted_files, missing_files
+
+    def _branch_exists(self, branch_name: str) -> bool:
+        """Check if a local branch exists."""
+        try:
+            return branch_name in [b.name for b in self.repo.branches]
+        except Exception:
+            return False
+
+    def _resolve_new_branch_name(self, branch_name: str) -> str:
+        """
+        Return a branch name that does not collide with an existing local branch.
+        Never silently reuses an existing branch (its history may be stale).
+        """
+        if not self._branch_exists(branch_name):
+            return branch_name
+        candidate = f"{branch_name}-v2"
+        if not self._branch_exists(candidate):
+            _console.print(
+                f"[yellow]⚠️  Branch '{branch_name}' zaten var, '{candidate}' kullanılıyor[/yellow]"
+            )
+            return candidate
+        candidate = f"{branch_name}-{uuid.uuid4().hex[:6]}"
+        _console.print(
+            f"[yellow]⚠️  Branch '{branch_name}' zaten var, '{candidate}' kullanılıyor[/yellow]"
+        )
+        return candidate
+
+    def commit_files_with_temp_index(
+        self,
+        files: List[str],
+        deleted_files: List[str],
+        message: str,
+        parent_ref: str = "HEAD"
+    ) -> Optional[str]:
+        """
+        Build a commit object containing only the given files on top of parent_ref,
+        using a temporary index. The working tree and the real index are NEVER touched,
+        so there is nothing to stash and nothing that can be lost.
+
+        Args:
+            files: Files to commit with their current worktree content
+            deleted_files: Files whose deletion should be committed
+            message: Commit message
+            parent_ref: Parent commit ref (branch name or sha)
+
+        Returns:
+            New commit sha, or None if the resulting tree is identical to the
+            parent's tree (nothing to commit — prevents empty commits).
+        """
+        git_dir = Path(self.repo.git_dir)
+        fd, tmp_index = tempfile.mkstemp(prefix="redgit-index-", dir=str(git_dir))
+        os.close(fd)
+        try:
+            with self.repo.git.custom_environment(GIT_INDEX_FILE=tmp_index):
+                # Seed temp index from the parent tree
+                self.repo.git.read_tree(parent_ref)
+
+                # Stage selected worktree files into the temp index
+                # (chunked to stay clear of ARG_MAX on huge file lists)
+                for i in range(0, len(files), 100):
+                    chunk = files[i:i + 100]
+                    self.repo.git.add("--", *chunk)
+
+                # Stage deletions
+                for f in deleted_files:
+                    try:
+                        self.repo.git.update_index("--force-remove", "--", f)
+                    except Exception:
+                        pass
+
+                tree_sha = self.repo.git.write_tree().strip()
+
+            parent_tree = self.repo.git.rev_parse(f"{parent_ref}^{{tree}}").strip()
+            if tree_sha == parent_tree:
+                # Nothing actually changed relative to parent — refuse empty commit
+                return None
+
+            parent_sha = self.repo.git.rev_parse(parent_ref).strip()
+            commit_sha = self.repo.git.commit_tree(
+                tree_sha, "-p", parent_sha, "-m", message
+            ).strip()
+            return commit_sha
+        finally:
+            try:
+                os.unlink(tmp_index)
+            except OSError:
+                pass
+
+    def _advance_branch(self, branch: str, new_sha: str):
+        """
+        Move a branch ref to new_sha. If it is the currently checked-out branch,
+        also sync the real index to the new HEAD (working tree untouched).
+        """
+        try:
+            current = self.repo.active_branch.name
+        except Exception:
+            current = None
+
+        if current == branch:
+            self.repo.git.update_ref(f"refs/heads/{branch}", new_sha)
+            # Sync index to new HEAD; --mixed never touches the working tree
+            self.repo.git.reset("--mixed", "HEAD")
+        else:
+            self.repo.git.branch("-f", branch, new_sha)
+
+    def _clean_worktree_after_commit(
+        self,
+        base_branch: str,
+        safe_files: List[str],
+        deleted_files: List[str]
+    ):
+        """
+        After committing files to a separate branch (merge-request strategy),
+        restore the base branch's version of those files in the working tree so
+        they are not re-proposed. The committed content is already safely stored
+        in the branch commit, so this cannot lose data.
+        """
+        git_root = Path(self.repo.working_dir)
+
+        for f in safe_files:
+            try:
+                # Does the file exist in the base tree?
+                self.repo.git.cat_file("-e", f"{base_branch}:{f}")
+                in_base = True
+            except Exception:
+                in_base = False
+
+            try:
+                if in_base:
+                    # Restores index + worktree to base version
+                    self.repo.git.checkout(base_branch, "--", f)
+                else:
+                    # New file: unstage if staged, then remove worktree copy
+                    # (content is preserved in the feature branch commit)
+                    try:
+                        self.repo.git.reset("HEAD", "--", f)
+                    except Exception:
+                        pass
+                    (git_root / f).unlink(missing_ok=True)
+            except Exception as e:
+                _console.print(f"[yellow]⚠️  Worktree temizlenemedi: {f} ({e})[/yellow]")
+
+        for f in deleted_files:
+            # Deletion is committed on the branch; restore base version in worktree
+            try:
+                self.repo.git.checkout(base_branch, "--", f)
+            except Exception:
+                pass
+
     def create_branch_and_commit(
         self,
         branch_name: str,
@@ -300,7 +529,10 @@ class GitOps:
         strategy: str = "local-merge"
     ) -> bool:
         """
-        Create a branch and commit specific files without losing working directory changes.
+        Create a branch and commit specific files WITHOUT touching the working tree.
+
+        Uses a temporary index + git commit-tree, so no stash/checkout dance is
+        needed and working directory changes can never be lost.
 
         Args:
             branch_name: Name of the branch to create
@@ -309,66 +541,28 @@ class GitOps:
             strategy: "local-merge" (merge immediately) or "merge-request" (keep branch for PR)
 
         Returns:
-            True if successful, False otherwise
+            True if a commit was created, False if there was nothing to commit.
 
-        Strategy for local-merge:
-        1. Stash all changes (including untracked)
-        2. Create and checkout feature branch from base
-        3. Pop stash to get files back
-        4. Reset index (unstage everything)
-        5. Stage only the specific files
-        6. Commit
-        7. Stash remaining changes before switching
-        8. Checkout base branch
-        9. Merge feature branch
-        10. Delete feature branch (it's merged now)
-        11. Pop remaining stash
+        local-merge:
+        1. Build commit object from base tree + selected files (temp index)
+        2. Point feature branch at it
+        3. Build a no-ff style merge commit (two parents) and advance base branch
+        4. Delete feature branch (merged)
+        Working tree is never modified; committed files simply stop showing as changed.
 
-        Strategy for merge-request:
-        1. Stash all changes (including untracked)
-        2. Create and checkout feature branch from base
-        3. Pop stash to get files back
-        4. Reset index (unstage everything)
-        5. Stage only the specific files
-        6. Commit
-        7. Stash remaining changes before switching
-        8. Checkout base branch (branch is kept for later push)
-        9. Pop remaining stash
+        merge-request:
+        1. Build commit object from base tree + selected files (temp index)
+        2. Point feature branch at it (kept for later push/PR)
+        3. Restore base version of committed files in the working tree so they
+           are not re-proposed (content lives in the branch commit).
         """
         base_branch = self.original_branch
         is_empty_repo = not self.has_commits()
 
-        # Filter out excluded files (but keep deleted files)
-        # Get current changes to check for deleted files
-        current_changes = {c["file"]: c["status"] for c in self.get_changes()}
-
-        # Get git root directory for resolving relative paths
-        git_root = Path(self.repo.working_dir)
-
-        safe_files = []
-        deleted_files = []
-        for f in files:
-            if is_excluded(f):
-                continue
-            # Check if file is deleted (either in git status or doesn't exist)
-            # Use git root to resolve paths correctly when running from subdirectory
-            file_path = git_root / f
-            status = current_changes.get(f)
-
-            if status == "D":
-                # Explicitly marked as deleted in git status
-                deleted_files.append(f)
-            elif not file_path.exists():
-                # File doesn't exist - treat as deleted (even if not in current_changes)
-                deleted_files.append(f)
-            elif file_path.exists():
-                # File exists - add to safe files
-                safe_files.append(f)
+        safe_files, deleted_files, _missing = self._classify_files(files)
 
         if not safe_files and not deleted_files:
             return False
-
-        actual_branch_name = branch_name
 
         # Special handling for empty repos (no commits yet)
         if is_empty_repo:
@@ -376,105 +570,47 @@ class GitOps:
                 branch_name, safe_files, deleted_files, message, strategy
             )
 
-        try:
-            # 1. Stash all changes (including untracked)
-            stash_created = False
+        # 1. Build the commit object (no worktree/index side effects)
+        commit_sha = self.commit_files_with_temp_index(
+            safe_files, deleted_files, message, parent_ref=base_branch
+        )
+        if commit_sha is None:
+            _console.print(
+                f"[yellow]⚠️  '{branch_name}': commit edilecek gerçek değişiklik yok "
+                f"(boş commit engellendi)[/yellow]"
+            )
+            return False
+
+        # 2. Create the feature branch pointing at the new commit
+        actual_branch_name = self._resolve_new_branch_name(branch_name)
+        self.repo.git.branch(actual_branch_name, commit_sha)
+
+        if strategy == "local-merge":
+            # 3. Build a no-ff style merge commit and advance the base branch
+            base_sha = self.repo.git.rev_parse(base_branch).strip()
+            tree_sha = self.repo.git.rev_parse(f"{commit_sha}^{{tree}}").strip()
+            merge_sha = self.repo.git.commit_tree(
+                tree_sha,
+                "-p", base_sha,
+                "-p", commit_sha,
+                "-m", f"Merge {actual_branch_name}"
+            ).strip()
+            self._advance_branch(base_branch, merge_sha)
+
+            # 4. Delete feature branch. The merge commit provably contains it
+            # (it is a parent), so force-delete is safe even when HEAD is elsewhere.
             try:
-                self.repo.git.stash("push", "-u", "-m", f"redgit-temp-{branch_name}")
-                stash_created = True
+                self.repo.git.branch("-d", actual_branch_name)
             except Exception:
-                pass
-
-            # 2. Create and checkout feature branch from base
-            try:
-                self.repo.git.checkout("-b", branch_name, base_branch)
-            except Exception:
-                # Branch might exist, try checkout
                 try:
-                    self.repo.git.checkout(branch_name)
-                except Exception:
-                    # Try with suffix
-                    actual_branch_name = f"{branch_name}-v2"
-                    self.repo.git.checkout("-b", actual_branch_name, base_branch)
-
-            # 3. Pop stash to get files back (use message pattern to avoid mixing stashes)
-            if stash_created:
-                self._pop_stash_by_message(f"redgit-temp-{branch_name}")
-
-            # 4. Reset index (unstage everything)
-            try:
-                self.repo.git.reset("HEAD")
-            except Exception:
-                pass
-
-            # 5. Stage only the specific files
-            for f in safe_files:
-                try:
-                    self.repo.index.add([f])
-                except Exception:
-                    pass
-
-            # 5b. Stage deleted files using git add -A (handles all deletion cases)
-            for f in deleted_files:
-                try:
-                    # git add -A stages deletions properly
-                    self.repo.git.add("-A", "--", f)
-                except Exception:
-                    # Fallback: try git rm
-                    try:
-                        self.repo.index.remove([f], working_tree=False)
-                    except Exception:
-                        try:
-                            self.repo.git.rm("--cached", f)
-                        except Exception:
-                            pass
-
-            # 6. Commit
-            self.repo.index.commit(message)
-
-            # 7. Stash remaining changes before switching
-            remaining_stashed = False
-            try:
-                self.repo.git.stash("push", "-u", "-m", f"redgit-remaining-{branch_name}")
-                remaining_stashed = True
-            except Exception:
-                pass
-
-            # 8. Checkout base branch
-            self.repo.git.checkout(base_branch)
-
-            # For local-merge strategy: merge and delete branch
-            if strategy == "local-merge":
-                # 9. Merge feature branch
-                try:
-                    self.repo.git.merge(actual_branch_name, "--no-ff", "-m", f"Merge {actual_branch_name}")
-                except Exception:
-                    # Fast-forward merge
-                    self.repo.git.merge(actual_branch_name)
-
-                # 10. Delete feature branch (it's merged now)
-                try:
-                    self.repo.git.branch("-d", actual_branch_name)
+                    self.repo.git.branch("-D", actual_branch_name)
                 except Exception:
                     pass
-            # For merge-request strategy: branch is kept for later push
+        else:
+            # merge-request: keep branch, clean committed changes from worktree
+            self._clean_worktree_after_commit(base_branch, safe_files, deleted_files)
 
-            # 11. Pop remaining stash (use message pattern to avoid mixing stashes)
-            if remaining_stashed:
-                self._pop_stash_by_message(f"redgit-remaining-{branch_name}")
-
-            return True
-
-        except Exception as e:
-            # Try to recover - go back to base branch
-            try:
-                self.repo.git.checkout(base_branch)
-            except Exception:
-                pass
-            # Try to pop our stashes (both temp and remaining, in case either exists)
-            self._pop_stash_by_message(f"redgit-temp-{branch_name}")
-            self._pop_stash_by_message(f"redgit-remaining-{branch_name}")
-            raise e
+        return True
 
     @contextlib.contextmanager
     def isolated_branch(self, branch_name: str) -> Generator[None, None, None]:
@@ -559,15 +695,30 @@ class GitOps:
 
         return staged, excluded
 
-    def commit(self, message: str, files: List[str] = None):
+    def commit(self, message: str, files: List[str] = None) -> Optional[str]:
         """
         Create a commit with the staged files.
 
         Args:
             message: Commit message
             files: If provided, reset these files in working directory after commit
+
+        Returns:
+            Commit sha, or None if nothing was staged (empty commit refused).
         """
-        self.repo.index.commit(message)
+        # Refuse empty commits: nothing staged relative to HEAD
+        if self.has_commits():
+            try:
+                staged = self.repo.git.diff("--cached", "--name-only").strip()
+            except Exception:
+                staged = None
+            if staged == "":
+                _console.print(
+                    "[yellow]⚠️  Stage'lenmiş değişiklik yok — boş commit engellendi[/yellow]"
+                )
+                return None
+
+        sha = self.repo.index.commit(message).hexsha
 
         # After committing, the files are in the branch's history
         # We need to remove them from the working directory so they don't
@@ -579,6 +730,8 @@ class GitOps:
                     self.repo.git.checkout("HEAD", "--", f)
                 except Exception:
                     pass
+
+        return sha
 
     def _commit_to_empty_repo(
         self,
@@ -664,10 +817,11 @@ class GitOps:
         Returns:
             True if successful, False otherwise
         """
-        # Stash current changes first
+        # Stash current changes first (unique token: stale stashes can never match)
+        stash_token = self._unique_stash_token("redgit-checkout", branch_name)
         stash_created = False
         try:
-            self.repo.git.stash("push", "-u", "-m", f"redgit-checkout-{branch_name}")
+            self.repo.git.stash("push", "-u", "-m", stash_token)
             stash_created = True
         except Exception:
             pass
@@ -675,15 +829,15 @@ class GitOps:
         try:
             self.repo.git.checkout(branch_name)
 
-            # Pop stash to restore changes
+            # Pop stash to restore changes (warn loudly if it fails)
             if stash_created:
-                self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+                self._pop_stash_or_warn(stash_token)
 
             return True
         except Exception:
             # Recovery - try to pop stash even if checkout failed
             if stash_created:
-                self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+                self._pop_stash_or_warn(stash_token)
             return False
 
     def push(self, branch_name: str = None, set_upstream: bool = True) -> bool:
@@ -727,10 +881,11 @@ class GitOps:
         Returns:
             (success: bool, is_new: bool, error_message: str or None)
         """
-        # Stash current changes first
+        # Stash current changes first (unique token: stale stashes can never match)
+        stash_token = self._unique_stash_token("redgit-checkout", branch_name)
         stash_created = False
         try:
-            self.repo.git.stash("push", "-u", "-m", f"redgit-checkout-{branch_name}")
+            self.repo.git.stash("push", "-u", "-m", stash_token)
             stash_created = True
         except Exception:
             pass
@@ -753,7 +908,7 @@ class GitOps:
                         self.repo.git.checkout("-b", branch_name, f"origin/{branch_name}")
                     except Exception as e:
                         if stash_created:
-                            self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+                            self._pop_stash_or_warn(stash_token)
                         return False, False, f"Failed to checkout remote branch: {e}"
 
                 # Pull latest changes
@@ -763,12 +918,12 @@ class GitOps:
                     except Exception as e:
                         # Pop stash before returning error
                         if stash_created:
-                            self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+                            self._pop_stash_or_warn(stash_token)
                         return False, False, f"Pull failed (possible conflict): {e}"
 
-                # Pop stash (use message pattern to avoid mixing stashes)
+                # Pop stash (warn loudly if it fails)
                 if stash_created:
-                    self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+                    self._pop_stash_or_warn(stash_token)
                 return True, False, None
 
             # Check if branch exists locally
@@ -776,7 +931,7 @@ class GitOps:
             if branch_name in local_branches:
                 self.repo.git.checkout(branch_name)
                 if stash_created:
-                    self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+                    self._pop_stash_or_warn(stash_token)
                 return True, False, None
 
             # Create new branch
@@ -784,14 +939,37 @@ class GitOps:
             self.repo.git.checkout("-b", branch_name, base)
 
             if stash_created:
-                self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+                self._pop_stash_or_warn(stash_token)
             return True, True, None
 
         except Exception as e:
             # Recovery - try to go back
             if stash_created:
-                self._pop_stash_by_message(f"redgit-checkout-{branch_name}")
+                self._pop_stash_or_warn(stash_token)
             return False, False, str(e)
+
+    def check_base_freshness(self, base_branch: str = None) -> tuple:
+        """
+        Fetch the base branch from origin and report how far behind local is.
+
+        Args:
+            base_branch: Branch to check (default: original_branch)
+
+        Returns:
+            (fetched: bool, behind_count: int)
+            fetched=False means origin/branch could not be fetched (no remote, offline, ...)
+        """
+        base = base_branch or self.original_branch
+        try:
+            self.repo.git.fetch("origin", base)
+        except Exception:
+            return False, 0
+
+        try:
+            behind = self.repo.git.rev_list("--count", f"{base}..origin/{base}")
+            return True, int(behind.strip() or 0)
+        except Exception:
+            return True, 0
 
     def is_behind_branch(self, branch: str, base_branch: str = None) -> tuple:
         """
@@ -922,121 +1100,48 @@ class GitOps:
         Returns:
             True if successful (committed and merged)
         """
-        # Filter out excluded files (but keep deleted files)
-        current_changes = {c["file"]: c["status"] for c in self.get_changes()}
-        git_root = Path(self.repo.working_dir)
-
-        safe_files = []
-        deleted_files = []
-        for f in files:
-            if is_excluded(f):
-                continue
-            file_path = git_root / f
-            status = current_changes.get(f)
-
-            if status == "D":
-                deleted_files.append(f)
-            elif not file_path.exists():
-                deleted_files.append(f)
-            elif file_path.exists():
-                safe_files.append(f)
+        safe_files, deleted_files, _missing = self._classify_files(files)
 
         if not safe_files and not deleted_files:
             return False
 
-        actual_branch_name = subtask_branch
+        # 1. Build the commit object on top of the parent branch (no worktree side effects)
+        commit_sha = self.commit_files_with_temp_index(
+            safe_files, deleted_files, message, parent_ref=parent_branch
+        )
+        if commit_sha is None:
+            _console.print(
+                f"[yellow]⚠️  '{subtask_branch}': commit edilecek gerçek değişiklik yok "
+                f"(boş commit engellendi)[/yellow]"
+            )
+            return False
 
+        # 2. Create the subtask branch pointing at the new commit
+        actual_branch_name = self._resolve_new_branch_name(subtask_branch)
+        self.repo.git.branch(actual_branch_name, commit_sha)
+
+        # 3. Build a no-ff style merge commit and advance the parent branch
+        parent_sha = self.repo.git.rev_parse(parent_branch).strip()
+        tree_sha = self.repo.git.rev_parse(f"{commit_sha}^{{tree}}").strip()
+        merge_sha = self.repo.git.commit_tree(
+            tree_sha,
+            "-p", parent_sha,
+            "-p", commit_sha,
+            "-m", f"Merge {actual_branch_name}"
+        ).strip()
+        self._advance_branch(parent_branch, merge_sha)
+
+        # 4. Delete subtask branch. The merge commit provably contains it
+        # (it is a parent), so force-delete is safe even when HEAD is elsewhere.
         try:
-            # 1. Stash all changes (including untracked)
-            stash_created = False
+            self.repo.git.branch("-d", actual_branch_name)
+        except Exception:
             try:
-                self.repo.git.stash("push", "-u", "-m", f"redgit-subtask-{subtask_branch}")
-                stash_created = True
+                self.repo.git.branch("-D", actual_branch_name)
             except Exception:
                 pass
 
-            # 2. Create and checkout subtask branch from parent
-            try:
-                self.repo.git.checkout("-b", subtask_branch, parent_branch)
-            except Exception:
-                # Branch might exist, try checkout
-                try:
-                    self.repo.git.checkout(subtask_branch)
-                except Exception:
-                    # Try with suffix
-                    actual_branch_name = f"{subtask_branch}-v2"
-                    self.repo.git.checkout("-b", actual_branch_name, parent_branch)
-
-            # 3. Pop stash to get files back (use message pattern to avoid mixing stashes)
-            if stash_created:
-                self._pop_stash_by_message(f"redgit-subtask-{subtask_branch}")
-
-            # 4. Reset index (unstage everything)
-            try:
-                self.repo.git.reset("HEAD")
-            except Exception:
-                pass
-
-            # 5. Stage only the specific files
-            for f in safe_files:
-                try:
-                    self.repo.index.add([f])
-                except Exception:
-                    pass
-
-            # 5b. Stage deleted files
-            for f in deleted_files:
-                try:
-                    self.repo.git.add("-A", "--", f)
-                except Exception:
-                    try:
-                        self.repo.index.remove([f], working_tree=False)
-                    except Exception:
-                        pass
-
-            # 6. Commit
-            self.repo.index.commit(message)
-
-            # 7. Stash remaining changes before switching
-            remaining_stashed = False
-            try:
-                self.repo.git.stash("push", "-u", "-m", f"redgit-remaining-{subtask_branch}")
-                remaining_stashed = True
-            except Exception:
-                pass
-
-            # 8. Checkout parent branch
-            self.repo.git.checkout(parent_branch)
-
-            # 9. Merge subtask branch
-            try:
-                self.repo.git.merge(actual_branch_name, "--no-ff", "-m", f"Merge {actual_branch_name}")
-            except Exception:
-                # Fast-forward merge
-                self.repo.git.merge(actual_branch_name)
-
-            # 10. Delete subtask branch (it's merged now)
-            try:
-                self.repo.git.branch("-d", actual_branch_name)
-            except Exception:
-                pass
-
-            # 11. Pop remaining stash (use message pattern to avoid mixing stashes)
-            if remaining_stashed:
-                self._pop_stash_by_message(f"redgit-remaining-{subtask_branch}")
-
-            return True
-
-        except Exception as e:
-            # Try to recover - go back to parent branch
-            try:
-                self.repo.git.checkout(parent_branch)
-            except Exception:
-                pass
-            # Try to pop our stashes (both subtask and remaining, in case either exists)
-            self._pop_stash_by_message(f"redgit-subtask-{subtask_branch}")
-            self._pop_stash_by_message(f"redgit-remaining-{subtask_branch}")
-            raise e
+        return True
 
     def get_project_name(self) -> str:
         """

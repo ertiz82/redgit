@@ -67,6 +67,7 @@ class BackupManager:
         branch_name = "unknown"
         head_commit = "unknown"
         stash_list = []
+        snapshot_commit = None
 
         if self.gitops and hasattr(self.gitops, 'repo'):
             try:
@@ -81,6 +82,18 @@ class BackupManager:
 
             stash_list = self._get_stash_list()
 
+            # Full git-native snapshot of tracked changes as a commit object.
+            # `git stash create` builds the commit WITHOUT touching the working
+            # tree or the stash list; the ref protects it from gc, making the
+            # backup rewindable git state (not just file copies).
+            try:
+                sha = self.gitops.repo.git.stash("create", f"redgit-backup-{backup_id}").strip()
+                if sha:
+                    self.gitops.repo.git.update_ref(f"refs/redgit/backups/{backup_id}", sha)
+                    snapshot_commit = sha
+            except Exception:
+                pass
+
         # 5. Save manifest
         manifest = {
             "id": backup_id,
@@ -88,6 +101,7 @@ class BackupManager:
             "command": command,
             "base_branch": branch_name,
             "head_commit": head_commit,
+            "snapshot_commit": snapshot_commit,
             "status": "created",
             "files": [
                 {
@@ -154,12 +168,28 @@ class BackupManager:
             except Exception:
                 pass
 
-        # 4. Restore files
+        # 4. Try git-native snapshot restore first (tracked changes).
+        # Falls back to file copies if apply fails (e.g. conflicts).
+        snapshot_applied = False
+        snapshot_sha = manifest.get("snapshot_commit")
+        if snapshot_sha and self.gitops and hasattr(self.gitops, 'repo'):
+            try:
+                self.gitops.repo.git.stash("apply", snapshot_sha)
+                snapshot_applied = True
+            except Exception:
+                snapshot_applied = False
+
+        # 5. Restore files from copies.
+        # If the snapshot applied, only untracked ("U") files still need copying
+        # (git stash create does not capture untracked files).
         files_dir = backup_dir / "files"
         for file_info in manifest.get("files", []):
             # Support both "file" and "path" keys
             file_path = file_info.get("file") or file_info.get("path", "")
             if not file_path:
+                continue
+
+            if snapshot_applied and file_info.get("status") not in ("U", "untracked"):
                 continue
 
             src = files_dir / file_path
@@ -260,6 +290,12 @@ class BackupManager:
                 backup_dir = self.backup_path / backup_id
                 if backup_dir.exists():
                     shutil.rmtree(backup_dir, ignore_errors=True)
+                # Drop the snapshot ref so the commit can be gc'd
+                if self.gitops and hasattr(self.gitops, 'repo'):
+                    try:
+                        self.gitops.repo.git.update_ref("-d", f"refs/redgit/backups/{backup_id}")
+                    except Exception:
+                        pass
 
         # Update latest symlink if needed
         remaining = self.list_backups()

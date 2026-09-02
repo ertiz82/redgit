@@ -1,6 +1,45 @@
 # Changelog
 
 
+# 1.6.0
+
+**Release Date:** 2026-09-02
+**Previous Version:** v1.5.0
+
+---
+
+## Highlights
+
+### 🛡️ File-loss fixes: stash-free commit engine
+
+- **Temp-index commits**: `propose` now builds commit objects with a temporary
+  index (`git commit-tree`) instead of the stash/checkout dance. The working
+  tree and the real index are never touched, so changes can no longer be lost
+  mid-propose.
+- **No more silent stash failures**: every stash pop is verified; on failure a
+  loud warning with the exact recovery command is printed.
+- **Missing files are never committed as deletions**: only files git itself
+  marks as deleted (`D`) are staged as deletions. Files absent from disk (e.g.
+  stuck in an old stash) are skipped with a warning.
+- **Empty commits refused**: commits are only created when the tree actually
+  changes; "✓ Committed" is never printed for a no-op.
+- **`push` no longer runs `reset --hard`**: remote sync refuses to merge onto a
+  dirty working tree instead of risking uncommitted changes.
+
+### Workflow hardening
+
+- Checkout/rebase/stage/commit results are verified in multi-task mode; failed
+  groups are skipped instead of committing to the wrong branch.
+- The workflow strategy is recorded in the session at propose time; `rgt push`
+  uses it even if `config.yaml` changed in between.
+- Base branch freshness check before propose (`fetch origin` + behind count).
+- Fixed double stash pop in the rebase flow that could pop an unrelated stash.
+- Fixed task detection matching by substring (SCRUM-85 vs SCRUM-858).
+- Backups now include a git-native snapshot (`git stash create` + protective
+  ref) and restore prefers it over file copies.
+
+---
+
 # 1.5.0
 
 **Release Date:** 2026-08-25

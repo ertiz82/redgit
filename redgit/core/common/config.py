@@ -502,8 +502,12 @@ class StateManager:
 
         self.save(state)
 
-    def set_base_branch(self, branch_name: str):
-        """Set the base branch for current session."""
+    def set_base_branch(self, branch_name: str, strategy: Optional[str] = None):
+        """Set the base branch (and optionally the workflow strategy) for current session.
+
+        Strategy is recorded at propose time so that push uses the strategy the
+        session was actually created with, even if config.yaml changes in between.
+        """
         state = self.load()
         if "session" not in state:
             state["session"] = {
@@ -513,6 +517,8 @@ class StateManager:
             }
         else:
             state["session"]["base_branch"] = branch_name
+        if strategy:
+            state["session"]["strategy"] = strategy
         self.save(state)
 
     def get_session(self) -> Optional[dict]:

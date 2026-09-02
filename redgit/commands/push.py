@@ -580,7 +580,9 @@ def _confirm_and_push_session(
     tags: bool = True
 ) -> bool:
     """Handle session-based push with confirmation."""
-    strategy = config.get("workflow", {}).get("strategy", "local-merge")
+    # Use the strategy the session was created with (recorded at propose time).
+    # Falling back to config only for old sessions without the field.
+    strategy = session.get("strategy") or config.get("workflow", {}).get("strategy", "local-merge")
     subtask_issues = session.get("subtask_issues", [])
 
     if strategy == "merge-request":
@@ -687,7 +689,8 @@ def push_cmd(
     session = state_manager.get_session()
     gitops = GitOps()
     workflow = config.get("workflow", {})
-    strategy = workflow.get("strategy", "local-merge")
+    # Session strategy (recorded at propose time) wins over current config
+    strategy = (session or {}).get("strategy") or workflow.get("strategy", "local-merge")
 
     # Auto-enable PR creation for merge-request strategy
     if strategy == "merge-request" and not create_pr:
@@ -1629,9 +1632,28 @@ def _sync_with_remote(gitops: GitOps, branch: str) -> tuple:
         console.print(f"[green]   ✓ Up to date with origin/{branch}[/green]")
         return True, []
 
+    # 4. Refuse to merge onto a dirty working tree.
+    # A merge attempt with uncommitted changes can fail half-started, and any
+    # automatic "cleanup" (reset --hard) would destroy the user's changes.
+    try:
+        is_dirty = gitops.repo.is_dirty(untracked_files=False)
+    except Exception:
+        is_dirty = False
+
+    if is_dirty:
+        console.print(
+            f"[yellow]   ⚠️  Remote {behind_count} commit ileride ama working tree'de "
+            f"commit edilmemiş değişiklikler var.[/yellow]"
+        )
+        console.print(
+            "[dim]   Güvenli merge için önce commit/stash yapın, "
+            "veya sync'i atlamak için: rgt push --no-pull[/dim]"
+        )
+        return False, []
+
     console.print(f"[dim]   Remote has {behind_count} new commit(s), attempting merge...[/dim]")
 
-    # 4. Try to merge (no commit, to test for conflicts)
+    # 5. Try to merge (no commit, to test for conflicts)
     try:
         gitops.repo.git.merge(f"origin/{branch}", "--no-commit", "--no-ff")
         # Merge successful, commit it
@@ -1639,7 +1661,7 @@ def _sync_with_remote(gitops: GitOps, branch: str) -> tuple:
         console.print(f"[green]   ✓ Merged {behind_count} commit(s) from remote[/green]")
         return True, []
     except git.GitCommandError:
-        # 5. Conflict detected - get conflict files
+        # 6. Conflict detected - get conflict files
         conflict_files = []
         try:
             status = gitops.repo.git.status("--porcelain")
@@ -1654,14 +1676,15 @@ def _sync_with_remote(gitops: GitOps, branch: str) -> tuple:
         except Exception:
             pass
 
-        # 6. Abort merge to restore clean state
+        # 7. Abort merge to restore clean state.
+        # NEVER fall back to `reset --hard`: it would wipe uncommitted changes.
         try:
             gitops.repo.git.merge("--abort")
         except Exception:
-            try:
-                gitops.repo.git.reset("--hard", "HEAD")
-            except Exception:
-                pass
+            console.print(
+                "[yellow]   ⚠️  Merge abort edilemedi — repo durumunu kontrol edin: "
+                "git status[/yellow]"
+            )
 
         return False, conflict_files
 

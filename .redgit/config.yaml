@@ -1,21 +1,35 @@
 project:
   name: RedGit
 llm:
-  provider: qwen-code
-  model: qwen-coder
+  provider: claude-code
+  model: sonnet
   prompt: auto
   max_files: 100
   include_content: false
-  timeout: 120
+  timeout: 300
 plugins:
   enabled:
   - laravel
   - version
   - changelog
   version:
-    current: 0.2.2
+    current: 1.6.0
     enabled: true
-integrations: {}
+  changelog:
+    enabled: true
+    format: markdown
+    output_dir: changelogs
+    group_by_type: true
+integrations:
+  telegram:
+    enabled: true
+    bot_token: 8446566573:AAGUZYOpvcsUJrudOdPKRuxQLxx2jiieDwY
+    chat_id: '8402797883'
+    parse_mode: HTML
+  msteams:
+    enabled: true
+    tenant_id: ''
+    client_id: ''
 editor:
   command:
   - code
@@ -25,3 +39,21 @@ workflow:
   auto_transition: true
   create_missing_issues: ask
   default_issue_type: task
+active:
+  notification: telegram
+quality:
+  enabled: true
+  threshold: 70
+  fail_on_security: true
+  prompt_file: quality_prompt.md
+semgrep:
+  enabled: true
+  configs:
+  - auto
+  severity:
+  - ERROR
+  - WARNING
+  exclude: []
+  timeout: 300
+daily:
+  language: tr

@@ -486,11 +486,28 @@ def propose_cmd(
     except Exception as backup_error:
         console.print(f"[yellow]Warning: Could not create backup: {backup_error}[/yellow]")
 
+    # Check base branch freshness against origin (branches/PRs based on a stale
+    # base cause avoidable conflicts). Non-blocking: warn only.
+    if not dry_run:
+        with console.status("Checking base branch freshness..."):
+            fetched, behind_count = gitops.check_base_freshness()
+        if fetched and behind_count > 0:
+            console.print(
+                f"[yellow]⚠️  Base branch '{gitops.original_branch}' origin'den "
+                f"{behind_count} commit geride.[/yellow]"
+            )
+            console.print(
+                "[dim]   Yeni branch'ler bayat base'den açılacak. "
+                f"Önce güncellemek için: git pull origin {gitops.original_branch}[/dim]"
+            )
+            if not Confirm.ask("Yine de devam edilsin mi?", default=True):
+                raise typer.Exit(0)
+
     # Match changed files to errors if error tracking is enabled
     matched_errors: List[ErrorMatchResult] = []
     if error_tracker and error_tracker.enabled:
         with console.status("Matching files to errors..."):
-            file_paths = [c.get("path", "") for c in changes if c.get("path")]
+            file_paths = [c.get("file") or c.get("path", "") for c in changes if c.get("file") or c.get("path")]
             matched_errors = error_tracker.get_errors_for_files(file_paths)
 
         if matched_errors:
@@ -701,8 +718,11 @@ def propose_cmd(
         return
 
     try:
-        # Save base branch for session
-        state_manager.set_base_branch(gitops.original_branch)
+        # Save base branch + strategy for session (push reads strategy from here)
+        state_manager.set_base_branch(
+            gitops.original_branch,
+            strategy=workflow.get("strategy", "local-merge")
+        )
 
         # Check if using subtasks mode with hierarchical branching
         if subtasks and parent_task_key and parent_issue:
@@ -896,8 +916,8 @@ def _process_matched_groups(
             if single_branch:
                 # Single branch mode: commit directly to current branch
                 staged_files, failed_files = gitops.stage_files(files)
-                if staged_files:
-                    commit_sha = gitops.commit(msg)
+                commit_sha = gitops.commit(msg) if staged_files else None
+                if commit_sha:
                     console.print(f"[green]   ✓ Committed: {group['commit_title'][:50]}[/green]")
 
                     # Add comment to issue
@@ -1108,8 +1128,8 @@ def _process_unmatched_groups(
             if single_branch:
                 # Single branch mode: commit directly to current branch
                 staged_files, failed_files = gitops.stage_files(files)
-                if staged_files:
-                    commit_sha = gitops.commit(msg)
+                commit_sha = gitops.commit(msg) if staged_files else None
+                if commit_sha:
                     console.print(f"[green]   ✓ Committed: {group['commit_title'][:50]}[/green]")
 
                     # Add comment if issue was created
@@ -1435,8 +1455,8 @@ def _process_task_commit(
         issue_ref=issue_key
     )
 
-    # Save base branch for session
-    state_manager.set_base_branch(gitops.original_branch)
+    # Save base branch + strategy for session
+    state_manager.set_base_branch(gitops.original_branch, strategy=strategy)
 
     # Create branch and commit (use file_paths, not changes dict)
     try:
@@ -2180,6 +2200,109 @@ def _transform_scout_result_to_multi_task(scout_result: dict, parent_tasks: list
     }
 
 
+def _checkout_branch_for_group(
+    gitops: GitOps,
+    branch_name: str,
+    original_branch: str,
+    skipped_branches: set,
+    rebased_branches: set
+) -> bool:
+    """
+    Ensure branch_name is checked out (created from original_branch if needed)
+    and rebased if behind. Every checkout/rebase result is verified — on failure
+    the group is skipped instead of silently committing to the wrong branch.
+
+    Returns:
+        True if the branch is checked out and ready, False if group must be skipped.
+    """
+    def _checkout(from_branch=None) -> bool:
+        success, _is_new, error = gitops.checkout_or_create_branch(
+            branch_name, from_branch=from_branch
+        )
+        if not success:
+            console.print(f"  [red]❌ Branch checkout başarısız: {branch_name} ({error})[/red]")
+            skipped_branches.add(branch_name)
+            return False
+        return True
+
+    local_branches = [b.name for b in gitops.repo.branches]
+
+    if branch_name not in local_branches:
+        return _checkout(from_branch=original_branch)
+
+    # Branch exists locally — already rebased this session?
+    if branch_name in rebased_branches:
+        return _checkout()
+
+    is_behind, count = gitops.is_behind_branch(branch_name, original_branch)
+    if not is_behind:
+        return _checkout()
+
+    console.print(f"\n  [yellow]⚠️  Branch '{branch_name}' base branch'ten {count} commit geride[/yellow]")
+    if not Confirm.ask("  Rebase yapılsın mı?", default=True):
+        console.print("  [dim]Rebase atlandı, mevcut branch kullanılıyor[/dim]")
+        return _checkout()
+
+    # Rebase path: stash once with a unique token, pop exactly once in finally.
+    # (Old code popped twice on the conflict path, which could blow away the
+    # user's own unrelated stash entry.)
+    import uuid as _uuid
+    stash_token = f"redgit-rebase-{branch_name}-{_uuid.uuid4().hex[:8]}"
+    stash_created = False
+    try:
+        gitops.repo.git.stash("push", "-u", "-m", stash_token)
+        stash_created = True
+    except Exception:
+        pass
+
+    rebase_ok = False
+    try:
+        gitops.repo.git.checkout(branch_name)
+        success, error = gitops.rebase_from_branch(branch_name, original_branch)
+        if not success:
+            console.print(f"  [red]❌ Rebase conflict: {error}[/red]")
+            console.print("  [yellow]Bu branch'e giden tüm gruplar atlanacak[/yellow]")
+            skipped_branches.add(branch_name)
+            try:
+                gitops.repo.git.checkout(original_branch)
+            except Exception:
+                pass
+        else:
+            console.print("  [green]✓ Rebase başarılı[/green]")
+            rebased_branches.add(branch_name)
+            rebase_ok = True
+    finally:
+        if stash_created:
+            gitops._pop_stash_or_warn(stash_token)
+
+    return rebase_ok
+
+
+def _stage_and_commit_group(gitops: GitOps, files: List[str], commit_msg: str, label: str) -> bool:
+    """
+    Stage the given files and commit, verifying each step.
+
+    Returns:
+        True if a real commit was created; False if nothing could be staged or
+        the commit was refused (empty). Never reports success on an empty commit.
+    """
+    staged, _excluded = gitops.stage_files(files)
+    if not staged:
+        console.print(
+            f"  [yellow]⚠️  Stage'lenecek dosya bulunamadı ({label}) — grup atlandı.[/yellow]"
+        )
+        console.print(
+            "  [dim]Dosyalar diskte olmayabilir (stash kontrolü: git stash list)[/dim]"
+        )
+        return False
+
+    sha = gitops.commit(commit_msg)
+    if not sha:
+        console.print(f"  [yellow]⚠️  Commit oluşturulamadı ({label}) — grup atlandı[/yellow]")
+        return False
+    return True
+
+
 def _process_multi_task_mode(
     changes: List[Dict],
     gitops: GitOps,
@@ -2360,6 +2483,7 @@ def _process_multi_task_mode(
     if "session" not in state:
         state["session"] = {}
     state["session"]["base_branch"] = original_branch
+    state["session"]["strategy"] = workflow_strategy
     state["session"]["branches"] = []
     state["session"]["issues"] = []
     state["session"]["subtask_issues"] = []
@@ -2417,65 +2541,16 @@ def _process_multi_task_mode(
                                 console.print(f"  [yellow]⚠️ Branch '{branch_name}' daha önce atlandı (rebase conflict), bu grup da atlanıyor[/yellow]")
                                 continue
 
-                            # Create separate branch for each subtask
-                            # Check if branch exists and needs rebase
-                            local_branches = [b.name for b in gitops.repo.branches]
-                            if branch_name in local_branches:
-                                # Skip rebase check if already rebased in this session
-                                if branch_name not in rebased_branches:
-                                    is_behind, count = gitops.is_behind_branch(branch_name, original_branch)
-                                    if is_behind:
-                                        console.print(f"\n  [yellow]⚠️  Branch '{branch_name}' base branch'ten {count} commit geride[/yellow]")
-                                        if Confirm.ask("  Rebase yapılsın mı?", default=True):
-                                            # Stash changes before checkout
-                                            stash_name = f"redgit-rebase-{branch_name}"
-                                            stash_created = False
-                                            try:
-                                                gitops.repo.git.stash("push", "-u", "-m", stash_name)
-                                                stash_created = True
-                                            except Exception:
-                                                pass
+                            # Create/checkout branch for this subtask (verified)
+                            if not _checkout_branch_for_group(
+                                gitops, branch_name, original_branch,
+                                skipped_branches, rebased_branches
+                            ):
+                                continue
 
-                                            try:
-                                                gitops.repo.git.checkout(branch_name)
-                                                success, error = gitops.rebase_from_branch(branch_name, original_branch)
-                                                if not success:
-                                                    console.print(f"  [red]❌ Rebase conflict: {error}[/red]")
-                                                    console.print("  [yellow]Bu branch'e giden tüm gruplar atlanacak[/yellow]")
-                                                    skipped_branches.add(branch_name)
-                                                    # Restore stash and go back
-                                                    gitops.repo.git.checkout(original_branch)
-                                                    if stash_created:
-                                                        try:
-                                                            gitops.repo.git.stash("pop")
-                                                        except Exception:
-                                                            pass
-                                                    continue
-                                                console.print(f"  [green]✓ Rebase başarılı[/green]")
-                                                rebased_branches.add(branch_name)
-                                            finally:
-                                                # Restore stash after rebase
-                                                if stash_created:
-                                                    try:
-                                                        gitops.repo.git.stash("pop")
-                                                    except Exception:
-                                                        pass
-                                        else:
-                                            console.print("  [dim]Rebase atlandı, mevcut branch kullanılıyor[/dim]")
-                                            # Use checkout_or_create_branch which handles stashing
-                                            gitops.checkout_or_create_branch(branch_name)
-                                    else:
-                                        # Use checkout_or_create_branch which handles stashing
-                                        gitops.checkout_or_create_branch(branch_name)
-                                else:
-                                    # Already rebased, just checkout
-                                    gitops.checkout_or_create_branch(branch_name)
-                            else:
-                                gitops.checkout_or_create_branch(branch_name, from_branch=original_branch)
-
-                            gitops.stage_files(files)
                             full_commit = build_commit_message(commit_title, commit_body)
-                            gitops.commit(full_commit)
+                            if not _stage_and_commit_group(gitops, files, full_commit, branch_name):
+                                continue
                             console.print(f"  [green]✓ Committed to {branch_name}[/green]")
 
                             # Track branch for push
@@ -2486,9 +2561,9 @@ def _process_multi_task_mode(
                             })
                         else:
                             # local-merge: commit directly to current branch
-                            gitops.stage_files(files)
                             full_commit = build_commit_message(commit_title, commit_body)
-                            gitops.commit(full_commit)
+                            if not _stage_and_commit_group(gitops, files, full_commit, original_branch):
+                                continue
                             console.print(f"  [green]✓ Committed: {commit_title}[/green]")
 
                             # Track as merged branch
@@ -2527,63 +2602,15 @@ def _process_multi_task_mode(
                         # Check if we're already on this branch
                         current = gitops.repo.active_branch.name
                         if current != branch_name:
-                            # Check if branch exists and needs rebase
-                            local_branches = [b.name for b in gitops.repo.branches]
-                            if branch_name in local_branches:
-                                # Skip rebase check if already rebased in this session
-                                if branch_name not in rebased_branches:
-                                    is_behind, count = gitops.is_behind_branch(branch_name, original_branch)
-                                    if is_behind:
-                                        console.print(f"\n  [yellow]⚠️  Branch '{branch_name}' base branch'ten {count} commit geride[/yellow]")
-                                        if Confirm.ask("  Rebase yapılsın mı?", default=True):
-                                            # Stash changes before checkout
-                                            stash_name = f"redgit-rebase-{branch_name}"
-                                            stash_created = False
-                                            try:
-                                                gitops.repo.git.stash("push", "-u", "-m", stash_name)
-                                                stash_created = True
-                                            except Exception:
-                                                pass
+                            # Create/checkout branch (verified; handles rebase check)
+                            if not _checkout_branch_for_group(
+                                gitops, branch_name, original_branch,
+                                skipped_branches, rebased_branches
+                            ):
+                                continue
 
-                                            try:
-                                                gitops.repo.git.checkout(branch_name)
-                                                success, error = gitops.rebase_from_branch(branch_name, original_branch)
-                                                if not success:
-                                                    console.print(f"  [red]❌ Rebase conflict: {error}[/red]")
-                                                    console.print("  [yellow]Bu branch'e giden tüm gruplar atlanacak[/yellow]")
-                                                    skipped_branches.add(branch_name)
-                                                    # Restore stash and go back
-                                                    gitops.repo.git.checkout(original_branch)
-                                                    if stash_created:
-                                                        try:
-                                                            gitops.repo.git.stash("pop")
-                                                        except Exception:
-                                                            pass
-                                                    continue
-                                                console.print(f"  [green]✓ Rebase başarılı[/green]")
-                                                rebased_branches.add(branch_name)
-                                            finally:
-                                                # Restore stash after rebase
-                                                if stash_created:
-                                                    try:
-                                                        gitops.repo.git.stash("pop")
-                                                    except Exception:
-                                                        pass
-                                        else:
-                                            console.print("  [dim]Rebase atlandı, mevcut branch kullanılıyor[/dim]")
-                                            # Use checkout_or_create_branch which handles stashing
-                                            gitops.checkout_or_create_branch(branch_name)
-                                    else:
-                                        # Use checkout_or_create_branch which handles stashing
-                                        gitops.checkout_or_create_branch(branch_name)
-                                else:
-                                    # Already rebased, just checkout
-                                    gitops.checkout_or_create_branch(branch_name)
-                            else:
-                                gitops.checkout_or_create_branch(branch_name, from_branch=original_branch)
-
-                        gitops.stage_files(files)
-                        gitops.commit(full_commit)
+                        if not _stage_and_commit_group(gitops, files, full_commit, branch_name):
+                            continue
                         console.print(f"  [green]✓ Committed to {branch_name}[/green]")
 
                         # Track branch (avoid duplicates)
@@ -2602,8 +2629,8 @@ def _process_multi_task_mode(
                                     break
                     else:
                         # local-merge: commit to current branch
-                        gitops.stage_files(files)
-                        gitops.commit(full_commit)
+                        if not _stage_and_commit_group(gitops, files, full_commit, original_branch):
+                            continue
                         console.print(f"  [green]✓ Committed: {prefixed_title[:60]}[/green]")
 
                         state["session"]["branches"].append({
@@ -2663,8 +2690,14 @@ def _process_multi_task_mode(
 
     # 12. Return to original branch
     try:
-        gitops.checkout_branch(original_branch)
-        console.print(f"\n[green]✓ Returned to {original_branch}[/green]")
+        if gitops.repo.active_branch.name != original_branch:
+            if gitops.checkout(original_branch):
+                console.print(f"\n[green]✓ Returned to {original_branch}[/green]")
+            else:
+                console.print(
+                    f"\n[yellow]⚠️  '{original_branch}' branch'ine dönülemedi — "
+                    f"şu an '{gitops.repo.active_branch.name}' üzerindesiniz[/yellow]"
+                )
     except Exception:
         pass
 
@@ -2737,10 +2770,16 @@ def _process_task_filtered_mode(
         # Determine branch name
         parent_branch = task_mgmt.format_branch_name(parent_task_key, parent_issue.summary)
 
-        # Check if we're already on the task branch
-        is_already_on_task = (
+        # Check if we're already on the task branch.
+        # Word-boundary match: plain substring would make SCRUM-85 wrongly
+        # match a branch like feature/scrum-858-x.
+        is_already_on_task = bool(
             original_branch == parent_branch or
-            parent_task_key.lower() in original_branch.lower()
+            re.search(
+                rf"(^|[/_-]){re.escape(parent_task_key)}([_-]|$)",
+                original_branch,
+                re.IGNORECASE
+            )
         )
 
         # Get all files
@@ -2800,9 +2839,10 @@ Return JSON: {{"commit_title": "type(scope): description", "commit_body": "detai
         # Create/switch to branch and commit
         if is_already_on_task:
             console.print(f"\n[cyan]Zaten task branch'indesiniz: {original_branch}[/cyan]")
-            # Just stage and commit
-            gitops.stage_files(all_files)
-            gitops.commit(commit_msg)
+            # Just stage and commit (verified — no silent empty commits)
+            if not _stage_and_commit_group(gitops, all_files, commit_msg, original_branch):
+                console.print("[red]❌ Commit failed[/red]")
+                return
             console.print(f"[green]✓ Committed to {original_branch}[/green]")
             state_manager.add_session_branch(original_branch, parent_task_key)
         else:
@@ -2824,11 +2864,20 @@ Return JSON: {{"commit_title": "type(scope): description", "commit_body": "detai
                 console.print("[red]❌ Commit failed[/red]")
                 return
 
-        # Ask about pushing
-        if Confirm.ask(f"\nPush {parent_branch}?", default=False):
+        # Ask about pushing.
+        # local-merge: parent_branch was merged into original_branch and deleted,
+        # so the branch to push is original_branch, not parent_branch.
+        if is_already_on_task:
+            push_branch = original_branch
+        elif strategy == "local-merge":
+            push_branch = original_branch
+        else:
+            push_branch = parent_branch
+
+        if Confirm.ask(f"\nPush {push_branch}?", default=False):
             try:
-                gitops.push(parent_branch)
-                console.print(f"[green]✓ Pushed {parent_branch}[/green]")
+                gitops.push(push_branch)
+                console.print(f"[green]✓ Pushed {push_branch}[/green]")
             except Exception as e:
                 console.print(f"[red]❌ Push failed: {e}[/red]")
 

@@ -758,6 +758,7 @@ class TestSyncWithRemote:
         mock_gitops = MagicMock()
         mock_gitops.repo.git.ls_remote.return_value = "abc123\trefs/heads/main"
         mock_gitops.repo.git.rev_list.return_value = "5"
+        mock_gitops.repo.is_dirty.return_value = False
         mock_gitops.repo.git.merge.return_value = None
         mock_gitops.repo.git.commit.return_value = None
 
@@ -767,6 +768,26 @@ class TestSyncWithRemote:
         assert success is True
         mock_gitops.repo.git.merge.assert_called()
 
+    def test_refuses_merge_on_dirty_tree(self):
+        """Test refuses to merge remote commits onto a dirty working tree."""
+        from redgit.commands.push import _sync_with_remote
+
+        mock_gitops = MagicMock()
+        mock_gitops.repo.git.ls_remote.return_value = "abc123\trefs/heads/main"
+        mock_gitops.repo.git.rev_list.return_value = "2"
+        mock_gitops.repo.is_dirty.return_value = True
+
+        with patch('redgit.commands.push.console.print'):
+            success, conflicts = _sync_with_remote(mock_gitops, "main")
+
+        assert success is False
+        assert conflicts == []
+        # Merge must never be attempted on a dirty tree
+        mock_gitops.repo.git.merge.assert_not_called()
+        # And reset --hard must never be used as cleanup
+        for call in mock_gitops.repo.git.reset.call_args_list:
+            assert "--hard" not in call.args
+
     def test_detects_conflicts(self):
         """Test detects merge conflicts."""
         from redgit.commands.push import _sync_with_remote
@@ -775,6 +796,7 @@ class TestSyncWithRemote:
         mock_gitops = MagicMock()
         mock_gitops.repo.git.ls_remote.return_value = "abc123\trefs/heads/main"
         mock_gitops.repo.git.rev_list.return_value = "3"
+        mock_gitops.repo.is_dirty.return_value = False
         mock_gitops.repo.git.merge.side_effect = git.GitCommandError("merge", 1)
         mock_gitops.repo.git.status.return_value = "UU conflict.py\nUU another.py"
 
